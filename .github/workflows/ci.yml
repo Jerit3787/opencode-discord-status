@@ -7,7 +7,12 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,3 +24,6 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./...
+
+      - if: runner.os == 'Linux'
+        run: go test -race ./...

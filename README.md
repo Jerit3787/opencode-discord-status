@@ -90,8 +90,8 @@ projects.
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--client-id` | shared app ID | Override with your own Discord Application ID. |
-| `--db` | `~/.local/share/opencode/opencode.db` | OpenCode database. |
+| `--client-id` | shared app ID | Override with your own Discord Application ID (or `DISCORD_CLIENT_ID`). |
+| `--db` | `~/.local/share/opencode/opencode.db` | OpenCode database (`OPENCODE_DB`, then `XDG_DATA_HOME`). |
 | `--interval` | `2s` | Poll interval. |
 | `--idle-after` | `15m` | Treat a session with no writes for this long as idle. |
 | `--exit-when-closed` | `false` | Clear and exit when OpenCode is not running. |
@@ -105,7 +105,10 @@ projects.
 - The last assistant message decides busy/idle; the session row supplies model,
   agent, tokens, and cost.
 - A small Discord IPC client performs the `v: 1` handshake and sends
-  `SET_ACTIVITY` over the local socket. It reconnects once if Discord restarts.
+  `SET_ACTIVITY` over the local socket. It reconnects when Discord restarts,
+  answers PINGs, and surfaces Discord's errors instead of dropping them.
+- Token/cost churn is throttled to one update every four seconds; busy/idle and
+  project changes go immediately.
 - No plugin entry and no OpenCode restart are needed.
 
 ## Development

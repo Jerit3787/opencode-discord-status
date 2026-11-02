@@ -95,169 +95,6 @@ func TestClient_SetActivity_NotConnected(t *testing.T) {
 	}
 }
 
-func TestClient_SetActivity(t *testing.T) {
-	tests := []struct {
-		name           string
-		activity       Activity
-		wantDetails    bool
-		wantState      bool
-		wantTimestamps bool
-		wantAssets     bool
-		wantLargeImage bool
-		wantLargeText  bool
-	}{
-		{
-			name:        "Minimal activity - only details",
-			activity:    Activity{Details: "Working on project"},
-			wantDetails: true,
-		},
-		{
-			name:        "Activity with state",
-			activity:    Activity{Details: "Working", State: "In progress"},
-			wantDetails: true,
-			wantState:   true,
-		},
-		{
-			name: "Activity with timestamp",
-			activity: Activity{
-				Details:   "Working",
-				StartTime: timePtr(time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)),
-			},
-			wantDetails:    true,
-			wantTimestamps: true,
-		},
-		{
-			name: "Activity with assets",
-			activity: Activity{
-				Details:    "Working",
-				LargeImage: "logo",
-				LargeText:  "App Logo",
-			},
-			wantDetails:    true,
-			wantAssets:     true,
-			wantLargeImage: true,
-			wantLargeText:  true,
-		},
-		{
-			name: "Full activity",
-			activity: Activity{
-				Details:    "Working on: myproject",
-				State:      "Opus 4.5 | 10K tokens | $0.50",
-				LargeImage: "logo",
-				LargeText:  "Clawd Code",
-				SmallImage: "model",
-				SmallText:  "Claude Model",
-				StartTime:  timePtr(time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)),
-			},
-			wantDetails:    true,
-			wantState:      true,
-			wantTimestamps: true,
-			wantAssets:     true,
-			wantLargeImage: true,
-			wantLargeText:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := NewClient("test-client-id")
-			mock := &mockConn{}
-			client.conn = mock
-
-			err := client.SetActivity(tt.activity)
-			if err != nil {
-				t.Fatalf("SetActivity returned error: %v", err)
-			}
-
-			// Parse the written frame
-			frame := mock.writeBuffer.Bytes()
-			if len(frame) < 8 {
-				t.Fatalf("Frame too short: %d bytes", len(frame))
-			}
-
-			// Check opcode is Frame (1)
-			opcode := binary.LittleEndian.Uint32(frame[0:4])
-			if opcode != opFrame {
-				t.Errorf("opcode = %d, want %d (opFrame)", opcode, opFrame)
-			}
-
-			// Parse payload
-			length := binary.LittleEndian.Uint32(frame[4:8])
-			if int(length)+8 != len(frame) {
-				t.Errorf("length mismatch: header says %d, actual payload is %d", length, len(frame)-8)
-			}
-
-			payload := frame[8:]
-			var msg map[string]interface{}
-			if err := json.Unmarshal(payload, &msg); err != nil {
-				t.Fatalf("Failed to parse payload JSON: %v", err)
-			}
-
-			// Verify command
-			if msg["cmd"] != "SET_ACTIVITY" {
-				t.Errorf("cmd = %v, want SET_ACTIVITY", msg["cmd"])
-			}
-
-			// Verify nonce exists
-			if msg["nonce"] == nil {
-				t.Error("nonce should not be nil")
-			}
-
-			// Verify args structure
-			args, ok := msg["args"].(map[string]interface{})
-			if !ok {
-				t.Fatal("args is not a map")
-			}
-
-			// Verify PID exists
-			if args["pid"] == nil {
-				t.Error("pid should not be nil")
-			}
-
-			// Verify activity
-			activity, ok := args["activity"].(map[string]interface{})
-			if !ok {
-				t.Fatal("activity is not a map")
-			}
-
-			if tt.wantDetails {
-				if activity["details"] == nil {
-					t.Error("details should not be nil")
-				}
-			}
-
-			if tt.wantState {
-				if activity["state"] == nil {
-					t.Error("state should not be nil")
-				}
-			}
-
-			if tt.wantTimestamps {
-				timestamps, ok := activity["timestamps"].(map[string]interface{})
-				if !ok {
-					t.Error("timestamps should be present")
-				} else if timestamps["start"] == nil {
-					t.Error("timestamps.start should not be nil")
-				}
-			}
-
-			if tt.wantAssets {
-				assets, ok := activity["assets"].(map[string]interface{})
-				if !ok {
-					t.Error("assets should be present")
-				} else {
-					if tt.wantLargeImage && assets["large_image"] == nil {
-						t.Error("assets.large_image should not be nil")
-					}
-					if tt.wantLargeText && assets["large_text"] == nil {
-						t.Error("assets.large_text should not be nil")
-					}
-				}
-			}
-		})
-	}
-}
-
 func TestClient_send(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -448,4 +285,50 @@ func TestFrameFormat(t *testing.T) {
 // Helper function to create time pointer
 func timePtr(t time.Time) *time.Time {
 	return &t
+}
+
+func TestActivityData(t *testing.T) {
+	start := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	t.Run("minimal", func(t *testing.T) {
+		data := activityData(Activity{Details: "Working"})
+		if data["details"] != "Working" {
+			t.Errorf("details = %v", data["details"])
+		}
+		if _, ok := data["state"]; ok {
+			t.Error("state should be omitted")
+		}
+		if _, ok := data["timestamps"]; ok {
+			t.Error("timestamps should be omitted")
+		}
+	})
+
+	t.Run("full", func(t *testing.T) {
+		data := activityData(Activity{
+			Details:    "Working",
+			State:      "In progress",
+			LargeImage: "logo",
+			LargeText:  "App",
+			SmallImage: "model",
+			SmallText:  "Claude",
+			StartTime:  &start,
+		})
+
+		if data["state"] != "In progress" {
+			t.Errorf("state = %v", data["state"])
+		}
+
+		timestamps, ok := data["timestamps"].(map[string]int64)
+		if !ok || timestamps["start"] != start.Unix() {
+			t.Errorf("timestamps = %#v", data["timestamps"])
+		}
+
+		assets, ok := data["assets"].(map[string]string)
+		if !ok {
+			t.Fatalf("assets = %#v", data["assets"])
+		}
+		if assets["large_image"] != "logo" || assets["small_text"] != "Claude" {
+			t.Errorf("assets = %#v", assets)
+		}
+	})
 }

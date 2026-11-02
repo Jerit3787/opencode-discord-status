@@ -50,11 +50,23 @@ func TestFormatTokensAndCost(t *testing.T) {
 	if got := formatTokens(12_300); got != "12.3K" {
 		t.Errorf("formatTokens(12300) = %q", got)
 	}
+	if got := formatTokens(999_999); got != "1.0M" {
+		t.Errorf("formatTokens(999999) = %q", got)
+	}
 	if got := formatTokens(1_300_000); got != "1.3M" {
 		t.Errorf("formatTokens(1300000) = %q", got)
 	}
 	if got := formatCost(0.0421); got != "$0.0421" {
-		t.Errorf("formatCost = %q", got)
+		t.Errorf("formatCost(0.0421) = %q", got)
+	}
+	if got := formatCost(0); got != "$0.00" {
+		t.Errorf("formatCost(0) = %q", got)
+	}
+	if got := formatCost(0.01); got != "$0.01" {
+		t.Errorf("formatCost(0.01) = %q", got)
+	}
+	if got := formatCost(3.4567); got != "$3.46" {
+		t.Errorf("formatCost(3.4567) = %q", got)
 	}
 }
 

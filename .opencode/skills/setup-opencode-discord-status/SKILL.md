@@ -56,7 +56,7 @@ starts again within 15 seconds of OpenCode reopening. The full plist is in
 `~/.local/share/opencode/opencode.db`:
 
 - `session_v2` supplies directory, model, agent, cost, and tokens.
-- The newest `session_message` supplies `time.completed` and `finish`.
+- The newest assistant `session_message` supplies `time.completed` and `finish`.
 - Missing `completed`/`finish`, or `finish: "tool-calls"`, means busy.
 - Any other `finish` means idle.
 - A busy session beats an idle one; the current session is kept unless another
@@ -80,5 +80,5 @@ The schema is internal. If a major OpenCode upgrade changes it, update
 
 - `-once` prints a project and a state line.
 - `--doctor` shows a test card for eight seconds.
-- `--debug` logs each published card and the Discord connection.
+- `--debug` logs each published card; the Discord connection is logged always.
 - If nothing appears, check Discord Activity Privacy first.

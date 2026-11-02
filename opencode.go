@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"time"
@@ -269,14 +270,32 @@ func formatTokens(tokens int64) string {
 	case tokens >= 1_000_000:
 		return fmt.Sprintf("%.1fM", float64(tokens)/1_000_000)
 	case tokens >= 1_000:
-		return fmt.Sprintf("%.1fK", float64(tokens)/1_000)
+		thousands := float64(tokens) / 1_000
+		if thousands >= 999.95 {
+			return "1.0M"
+		}
+		return fmt.Sprintf("%.1fK", thousands)
 	default:
 		return fmt.Sprintf("%d", tokens)
 	}
 }
 
 func formatCost(cost float64) string {
-	return fmt.Sprintf("$%.4f", cost)
+	if math.IsNaN(cost) || math.IsInf(cost, 0) || cost <= 0 {
+		return "$0.00"
+	}
+	if cost >= 1 {
+		return fmt.Sprintf("$%.2f", cost)
+	}
+
+	value := fmt.Sprintf("%.4f", cost)
+	value = strings.TrimRight(value, "0")
+	if strings.HasSuffix(value, ".") {
+		value += "00"
+	} else if decimals := len(value) - strings.Index(value, ".") - 1; decimals < 2 {
+		value += strings.Repeat("0", 2-decimals)
+	}
+	return "$" + value
 }
 
 func parseMessage(value string) *messageData {

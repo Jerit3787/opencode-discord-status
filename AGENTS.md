@@ -34,6 +34,13 @@ Go 1.26+ is required.
   unless another session is at least 10 seconds newer.
 - **Lifecycle:** `--exit-when-closed` clears the card and exits when no OpenCode
   process is running. The LaunchAgent uses `StartInterval`, never `KeepAlive`.
+- **Discord IPC state is authoritative.** The client marks itself disconnected
+  when the socket closes; `updatePresence` checks `Connected()` before dedupe
+  and reconnects, then republishes even if the card text is unchanged.
+- **SET_ACTIVITY is request/response.** Nonces are tracked; Discord's `ERROR`
+  replies must surface. Do not turn it back into fire-and-forget.
+- **Discord rate limits.** Token/cost churn is throttled to one update per four
+  seconds; busy/idle and project changes bypass the throttle.
 - **Privacy:** only the project folder name, model, tokens, and cost leave the
   machine. Never prompts, messages, or code.
 - **Discord client:** keep the IPC framing and the adapted MIT notice in

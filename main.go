@@ -16,11 +16,13 @@ import (
 )
 
 const (
-	defaultClientID   = "1566388789214191657"
-	reconnectInterval = 5 * time.Second
-	switchMargin      = 10 * time.Second
-	largeText         = "OpenCode - Discord Rich Presence"
-	maxFieldLength    = 128
+	defaultClientID    = "1566388789214191657"
+	reconnectInterval  = 5 * time.Second
+	minUpdateInterval  = 4 * time.Second
+	switchMargin       = 10 * time.Second
+	reconnectLogPeriod = 30 * time.Second
+	largeText          = "OpenCode - Discord Rich Presence"
+	maxFieldLength     = 128
 )
 
 var clientIDPattern = regexp.MustCompile(`^\d{17,20}$`)
@@ -28,6 +30,9 @@ var clientIDPattern = regexp.MustCompile(`^\d{17,20}$`)
 var (
 	discordClient  *discord.Client
 	lastPresence   string
+	lastDetails    string
+	lastSent       time.Time
+	lastReconnect  time.Time
 	currentSession string
 )
 
@@ -47,8 +52,8 @@ func main() {
 	once := flag.Bool("once", false, "print the current card and exit")
 	flag.Parse()
 
-	if *interval <= 0 {
-		log.Fatal("interval must be positive")
+	if *interval < time.Second {
+		log.Fatal("interval must be at least 1s")
 	}
 	if *idleAfter <= 0 {
 		log.Fatal("idle-after must be positive")
@@ -72,18 +77,18 @@ func main() {
 		return
 	}
 
+	discordClient = discord.NewClient(*clientID)
+
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-signals
 		clearPresence()
-		if discordClient != nil {
-			discordClient.Close()
-		}
+		discordClient.Close()
 		os.Exit(0)
 	}()
 
-	connectDiscord(*clientID, *exitWhenClosed)
+	connectDiscord(*exitWhenClosed)
 
 	if *doctor {
 		runDoctor()
@@ -124,9 +129,7 @@ func main() {
 	}
 }
 
-func connectDiscord(clientID string, exitWhenClosed bool) {
-	discordClient = discord.NewClient(clientID)
-
+func connectDiscord(exitWhenClosed bool) {
 	for attempt := 1; ; attempt++ {
 		err := discordClient.Connect()
 		if err == nil {
@@ -144,6 +147,19 @@ func connectDiscord(clientID string, exitWhenClosed bool) {
 }
 
 func updatePresence(snapshot *Snapshot, debug bool) {
+	if !discordClient.Connected() {
+		if err := discordClient.Reconnect(); err != nil {
+			if time.Since(lastReconnect) >= reconnectLogPeriod {
+				lastReconnect = time.Now()
+				log.Printf("Could not reconnect to Discord: %v", err)
+			}
+			return
+		}
+		log.Print("Reconnected to Discord")
+		lastPresence = ""
+		lastSent = time.Time{}
+	}
+
 	details, state := presenceText(snapshot)
 
 	startKey := ""
@@ -154,6 +170,15 @@ func updatePresence(snapshot *Snapshot, debug bool) {
 	if key == lastPresence {
 		return
 	}
+
+	// Discord rate-limits presence updates. Busy/idle and project changes go
+	// immediately; token/cost churn waits for the next window, and the next
+	// tick sends the newest values anyway.
+	now := time.Now()
+	if details == lastDetails && now.Sub(lastSent) < minUpdateInterval {
+		return
+	}
+
 	if debug {
 		log.Printf("%s / %s", details, state)
 	}
@@ -169,18 +194,13 @@ func updatePresence(snapshot *Snapshot, debug bool) {
 	}
 
 	if err := discordClient.SetActivity(activity); err != nil {
-		log.Printf("Presence update failed (%v); reconnecting", err)
-		if reconnectErr := discordClient.Reconnect(); reconnectErr != nil {
-			log.Printf("Reconnect failed: %v", reconnectErr)
-			return
-		}
-		if err := discordClient.SetActivity(activity); err != nil {
-			log.Printf("Presence update failed after reconnect: %v", err)
-			return
-		}
+		log.Printf("Presence update failed: %v", err)
+		return
 	}
 
 	lastPresence = key
+	lastDetails = details
+	lastSent = now
 }
 
 func clearPresence() {
@@ -267,6 +287,12 @@ func runDoctor() {
 }
 
 func defaultDBPath() string {
+	if path := os.Getenv("OPENCODE_DB"); path != "" {
+		return path
+	}
+	if data := os.Getenv("XDG_DATA_HOME"); data != "" {
+		return filepath.Join(data, "opencode", "opencode.db")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""

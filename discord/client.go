@@ -24,7 +24,11 @@ const (
 	opPong      = 4
 )
 
-const handshakeTimeout = 10 * time.Second
+const (
+	handshakeTimeout = 10 * time.Second
+	requestTimeout   = 10 * time.Second
+	maxFrameBytes    = 1 << 20
+)
 
 // Activity is a Discord Rich Presence activity.
 type Activity struct {
@@ -52,11 +56,24 @@ type Client struct {
 	mu    sync.Mutex
 	conn  Conn
 	write sync.Mutex
+
+	pendingMu sync.Mutex
+	pending   map[string]chan error
 }
 
 // NewClient creates a new Discord RPC client.
 func NewClient(clientID string) *Client {
-	return &Client{clientID: clientID}
+	return &Client{
+		clientID: clientID,
+		pending:  make(map[string]chan error),
+	}
+}
+
+// Connected reports whether a live socket is attached.
+func (c *Client) Connected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn != nil
 }
 
 // Connect establishes the connection and completes the handshake.
@@ -119,7 +136,6 @@ func validateHandshake(conn Conn) error {
 			return fmt.Errorf("Discord closed the handshake: %s (code %d)", closeData.Message, closeData.Code)
 		case opFrame:
 			var frame struct {
-				Cmd  string          `json:"cmd"`
 				Evt  string          `json:"evt"`
 				Data json.RawMessage `json:"data"`
 			}
@@ -144,9 +160,11 @@ func validateHandshake(conn Conn) error {
 	}
 }
 
-// readLoop drains responses and answers PINGs so a long-lived client does not
-// fill the socket or get disconnected.
+// readLoop drains responses, answers PINGs, and marks the client disconnected
+// when the socket goes away.
 func (c *Client) readLoop(conn Conn) {
+	defer c.disconnected(conn)
+
 	for {
 		opcode, payload, err := readFrame(conn)
 		if err != nil {
@@ -162,9 +180,41 @@ func (c *Client) readLoop(conn Conn) {
 			_ = conn.Close()
 			return
 		case opFrame:
-			// A SET_ACTIVITY reply; nothing to do.
+			c.handleResponse(payload)
 		}
 	}
+}
+
+func (c *Client) handleResponse(payload []byte) {
+	var frame struct {
+		Evt   string          `json:"evt"`
+		Nonce string          `json:"nonce"`
+		Data  json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &frame); err != nil || frame.Nonce == "" {
+		return
+	}
+
+	if frame.Evt == "ERROR" {
+		var rejected struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(frame.Data, &rejected)
+		c.resolve(frame.Nonce, fmt.Errorf("%s (code %d)", rejected.Message, rejected.Code))
+		return
+	}
+
+	c.resolve(frame.Nonce, nil)
+}
+
+func (c *Client) disconnected(conn Conn) {
+	c.mu.Lock()
+	if c.conn == conn {
+		c.conn = nil
+	}
+	c.mu.Unlock()
+	c.failPending(fmt.Errorf("Discord connection closed"))
 }
 
 // Reconnect closes any existing connection and establishes a fresh one.
@@ -173,8 +223,15 @@ func (c *Client) Reconnect() error {
 	return c.Connect()
 }
 
-// SetActivity updates the Discord Rich Presence.
+// SetActivity updates the Discord Rich Presence and waits for Discord's reply.
 func (c *Client) SetActivity(activity Activity) error {
+	return c.request("SET_ACTIVITY", map[string]interface{}{
+		"pid":      os.Getpid(),
+		"activity": activityData(activity),
+	})
+}
+
+func activityData(activity Activity) map[string]interface{} {
 	var timestamps map[string]int64
 	if activity.StartTime != nil {
 		timestamps = map[string]int64{"start": activity.StartTime.Unix()}
@@ -207,40 +264,89 @@ func (c *Client) SetActivity(activity Activity) error {
 	if timestamps != nil {
 		activityData["timestamps"] = timestamps
 	}
-
-	return c.send(opFrame, map[string]interface{}{
-		"cmd": "SET_ACTIVITY",
-		"args": map[string]interface{}{
-			"pid":      os.Getpid(),
-			"activity": activityData,
-		},
-		"nonce": fmt.Sprintf("%d", time.Now().UnixNano()),
-	})
+	return activityData
 }
 
-// ClearActivity removes the presence from the profile.
+// ClearActivity removes the presence from the profile and waits for Discord.
 func (c *Client) ClearActivity() error {
-	return c.send(opFrame, map[string]interface{}{
-		"cmd": "SET_ACTIVITY",
-		"args": map[string]interface{}{
-			"pid":      os.Getpid(),
-			"activity": nil,
-		},
-		"nonce": fmt.Sprintf("%d", time.Now().UnixNano()),
+	return c.request("SET_ACTIVITY", map[string]interface{}{
+		"pid":      os.Getpid(),
+		"activity": nil,
 	})
 }
 
-// Close disconnects from Discord.
+// Close disconnects from Discord and fails any in-flight requests.
 func (c *Client) Close() error {
 	c.mu.Lock()
 	conn := c.conn
 	c.conn = nil
 	c.mu.Unlock()
 
+	c.failPending(fmt.Errorf("Discord connection closed"))
+
 	if conn != nil {
 		return conn.Close()
 	}
 	return nil
+}
+
+func (c *Client) request(command string, arguments map[string]interface{}) error {
+	nonce := fmt.Sprintf("%d", time.Now().UnixNano())
+	result := make(chan error, 1)
+
+	c.pendingMu.Lock()
+	c.pending[nonce] = result
+	c.pendingMu.Unlock()
+
+	defer func() {
+		c.pendingMu.Lock()
+		delete(c.pending, nonce)
+		c.pendingMu.Unlock()
+	}()
+
+	if err := c.send(opFrame, map[string]interface{}{
+		"cmd":   command,
+		"args":  arguments,
+		"nonce": nonce,
+	}); err != nil {
+		return err
+	}
+
+	select {
+	case err := <-result:
+		return err
+	case <-time.After(requestTimeout):
+		return fmt.Errorf("Discord did not answer %s in time", command)
+	}
+}
+
+func (c *Client) resolve(nonce string, err error) {
+	c.pendingMu.Lock()
+	result := c.pending[nonce]
+	delete(c.pending, nonce)
+	c.pendingMu.Unlock()
+
+	if result == nil {
+		return
+	}
+	select {
+	case result <- err:
+	default:
+	}
+}
+
+func (c *Client) failPending(err error) {
+	c.pendingMu.Lock()
+	pending := c.pending
+	c.pending = make(map[string]chan error)
+	c.pendingMu.Unlock()
+
+	for _, result := range pending {
+		select {
+		case result <- err:
+		default:
+		}
+	}
 }
 
 func (c *Client) send(opcode int, data interface{}) error {
@@ -293,7 +399,7 @@ func readFrame(conn Conn) (int, []byte, error) {
 
 	opcode := int(binary.LittleEndian.Uint32(header[0:4]))
 	length := binary.LittleEndian.Uint32(header[4:8])
-	if length > 1<<20 {
+	if length > maxFrameBytes {
 		return 0, nil, fmt.Errorf("Discord IPC frame too large: %d bytes", length)
 	}
 
