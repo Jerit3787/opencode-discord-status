@@ -9,17 +9,24 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"sync"
 	"time"
 )
 
-// Opcodes for Discord IPC
+// Discord IPC opcodes.
 const (
 	opHandshake = 0
 	opFrame     = 1
+	opClose     = 2
+	opPing      = 3
+	opPong      = 4
 )
 
-// Activity represents Discord Rich Presence activity
+const handshakeTimeout = 10 * time.Second
+
+// Activity is a Discord Rich Presence activity.
 type Activity struct {
 	Details    string     `json:"details,omitempty"`
 	State      string     `json:"state,omitempty"`
@@ -30,76 +37,149 @@ type Activity struct {
 	StartTime  *time.Time `json:"-"`
 }
 
-// Conn interface for both unix sockets and windows pipes
+// Conn is the subset of a socket the client needs. Both net.Conn and
+// winio's pipe satisfy it.
 type Conn interface {
 	Read(b []byte) (n int, err error)
 	Write(b []byte) (n int, err error)
 	Close() error
 }
 
-// Client handles Discord RPC connection
+// Client handles the Discord RPC connection.
 type Client struct {
 	clientID string
-	conn     Conn
+
+	mu    sync.Mutex
+	conn  Conn
+	write sync.Mutex
 }
 
-// NewClient creates a new Discord RPC client
+// NewClient creates a new Discord RPC client.
 func NewClient(clientID string) *Client {
 	return &Client{clientID: clientID}
 }
 
-// Connect establishes connection to Discord
+// Connect establishes the connection and completes the handshake.
 func (c *Client) Connect() error {
 	conn, err := c.connectToDiscord()
 	if err != nil {
 		return err
 	}
-	c.conn = conn
 
-	// Send handshake
-	handshake := map[string]interface{}{
+	c.mu.Lock()
+	c.conn = conn
+	c.mu.Unlock()
+
+	if err := c.send(opHandshake, map[string]interface{}{
 		"v":         1,
 		"client_id": c.clientID,
-	}
-	if err := c.send(opHandshake, handshake); err != nil {
-		c.conn.Close()
+	}); err != nil {
+		c.Close()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
 
-	// Read handshake response
-	if _, err := c.receive(); err != nil {
-		c.conn.Close()
-		return fmt.Errorf("handshake response failed: %w", err)
+	if err := validateHandshake(conn); err != nil {
+		c.Close()
+		return err
 	}
 
+	go c.readLoop(conn)
 	return nil
 }
 
-// Reconnect closes any existing connection and establishes a fresh one.
-// Used to recover after Discord is quit and reopened.
-func (c *Client) Reconnect() error {
-	if c.conn != nil {
-		c.conn.Close()
-		c.conn = nil
+// validateHandshake waits for READY and fails on CLOSE or ERROR. PING frames
+// are answered while waiting.
+func validateHandshake(conn Conn) error {
+	if setter, ok := conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+		_ = setter.SetReadDeadline(time.Now().Add(handshakeTimeout))
+		defer setter.SetReadDeadline(time.Time{})
 	}
+
+	for {
+		opcode, payload, err := readFrame(conn)
+		if err != nil {
+			return fmt.Errorf("handshake response failed: %w", err)
+		}
+
+		switch opcode {
+		case opPing:
+			if err := writeFrame(conn, opPong, json.RawMessage(payload)); err != nil {
+				return err
+			}
+			continue
+		case opClose:
+			var closeData struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			}
+			_ = json.Unmarshal(payload, &closeData)
+			if closeData.Message == "" {
+				closeData.Message = "Discord closed the connection"
+			}
+			return fmt.Errorf("Discord closed the handshake: %s (code %d)", closeData.Message, closeData.Code)
+		case opFrame:
+			var frame struct {
+				Cmd  string          `json:"cmd"`
+				Evt  string          `json:"evt"`
+				Data json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal(payload, &frame); err != nil {
+				return fmt.Errorf("invalid handshake response: %w", err)
+			}
+			if frame.Evt == "ERROR" {
+				var rejected struct {
+					Code    int    `json:"code"`
+					Message string `json:"message"`
+				}
+				_ = json.Unmarshal(frame.Data, &rejected)
+				return fmt.Errorf("Discord rejected the handshake: %s (code %d)", rejected.Message, rejected.Code)
+			}
+			if frame.Evt == "READY" {
+				return nil
+			}
+			return fmt.Errorf("unexpected handshake response: %s", string(payload))
+		default:
+			return fmt.Errorf("unexpected handshake opcode %d", opcode)
+		}
+	}
+}
+
+// readLoop drains responses and answers PINGs so a long-lived client does not
+// fill the socket or get disconnected.
+func (c *Client) readLoop(conn Conn) {
+	for {
+		opcode, payload, err := readFrame(conn)
+		if err != nil {
+			return
+		}
+
+		switch opcode {
+		case opPing:
+			c.write.Lock()
+			_ = writeFrame(conn, opPong, json.RawMessage(payload))
+			c.write.Unlock()
+		case opClose:
+			_ = conn.Close()
+			return
+		case opFrame:
+			// A SET_ACTIVITY reply; nothing to do.
+		}
+	}
+}
+
+// Reconnect closes any existing connection and establishes a fresh one.
+func (c *Client) Reconnect() error {
+	_ = c.Close()
 	return c.Connect()
 }
 
-// SetActivity updates the Discord Rich Presence
+// SetActivity updates the Discord Rich Presence.
 func (c *Client) SetActivity(activity Activity) error {
-	if c.conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	// Build timestamps if StartTime is set
 	var timestamps map[string]int64
 	if activity.StartTime != nil {
-		timestamps = map[string]int64{
-			"start": activity.StartTime.Unix(),
-		}
+		timestamps = map[string]int64{"start": activity.StartTime.Unix()}
 	}
 
-	// Build assets
 	assets := map[string]string{}
 	if activity.LargeImage != "" {
 		assets["large_image"] = activity.LargeImage
@@ -128,71 +208,99 @@ func (c *Client) SetActivity(activity Activity) error {
 		activityData["timestamps"] = timestamps
 	}
 
-	payload := map[string]interface{}{
+	return c.send(opFrame, map[string]interface{}{
 		"cmd": "SET_ACTIVITY",
 		"args": map[string]interface{}{
 			"pid":      os.Getpid(),
 			"activity": activityData,
 		},
 		"nonce": fmt.Sprintf("%d", time.Now().UnixNano()),
-	}
-
-	return c.send(opFrame, payload)
+	})
 }
 
 // ClearActivity removes the presence from the profile.
 func (c *Client) ClearActivity() error {
-	if c.conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	payload := map[string]interface{}{
+	return c.send(opFrame, map[string]interface{}{
 		"cmd": "SET_ACTIVITY",
 		"args": map[string]interface{}{
 			"pid":      os.Getpid(),
 			"activity": nil,
 		},
 		"nonce": fmt.Sprintf("%d", time.Now().UnixNano()),
-	}
-
-	return c.send(opFrame, payload)
+	})
 }
 
-// Close disconnects from Discord
+// Close disconnects from Discord.
 func (c *Client) Close() error {
-	if c.conn != nil {
-		return c.conn.Close()
+	c.mu.Lock()
+	conn := c.conn
+	c.conn = nil
+	c.mu.Unlock()
+
+	if conn != nil {
+		return conn.Close()
 	}
 	return nil
 }
 
 func (c *Client) send(opcode int, data interface{}) error {
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("not connected")
+	}
+
+	c.write.Lock()
+	defer c.write.Unlock()
+	return writeFrame(conn, opcode, data)
+}
+
+// receive is kept for the tests and handshake-free callers.
+func (c *Client) receive() ([]byte, error) {
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	_, payload, err := readFrame(conn)
+	return payload, err
+}
+
+func writeFrame(conn Conn, opcode int, data interface{}) error {
 	payload, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
 
-	// Discord IPC frame: [opcode:4bytes][length:4bytes][payload]
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.LittleEndian, int32(opcode))
-	binary.Write(buf, binary.LittleEndian, int32(len(payload)))
+	_ = binary.Write(buf, binary.LittleEndian, int32(opcode))
+	_ = binary.Write(buf, binary.LittleEndian, int32(len(payload)))
 	buf.Write(payload)
 
-	_, err = c.conn.Write(buf.Bytes())
+	_, err = conn.Write(buf.Bytes())
 	return err
 }
 
-func (c *Client) receive() ([]byte, error) {
+// readFrame uses io.ReadFull because a socket read may return a partial frame.
+func readFrame(conn Conn) (int, []byte, error) {
 	header := make([]byte, 8)
-	if _, err := c.conn.Read(header); err != nil {
-		return nil, err
+	if _, err := io.ReadFull(conn, header); err != nil {
+		return 0, nil, err
 	}
 
+	opcode := int(binary.LittleEndian.Uint32(header[0:4]))
 	length := binary.LittleEndian.Uint32(header[4:8])
-	payload := make([]byte, length)
-	if _, err := c.conn.Read(payload); err != nil {
-		return nil, err
+	if length > 1<<20 {
+		return 0, nil, fmt.Errorf("Discord IPC frame too large: %d bytes", length)
 	}
 
-	return payload, nil
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(conn, payload); err != nil {
+		return 0, nil, err
+	}
+
+	return opcode, payload, nil
 }

@@ -16,9 +16,11 @@ import (
 )
 
 const (
+	defaultClientID   = "1566388789214191657"
 	reconnectInterval = 5 * time.Second
 	switchMargin      = 10 * time.Second
 	largeText         = "OpenCode - Discord Rich Presence"
+	maxFieldLength    = 128
 )
 
 var clientIDPattern = regexp.MustCompile(`^\d{17,20}$`)
@@ -30,7 +32,12 @@ var (
 )
 
 func main() {
-	clientID := flag.String("client-id", os.Getenv("DISCORD_CLIENT_ID"), "Discord Application ID")
+	defaultID := defaultClientID
+	if fromEnv := os.Getenv("DISCORD_CLIENT_ID"); fromEnv != "" {
+		defaultID = fromEnv
+	}
+
+	clientID := flag.String("client-id", defaultID, "Discord Application ID (defaults to the shared one)")
 	dbPath := flag.String("db", defaultDBPath(), "OpenCode database")
 	interval := flag.Duration("interval", 2*time.Second, "poll interval")
 	idleAfter := flag.Duration("idle-after", 15*time.Minute, "treat a session with no writes for this long as idle")
@@ -40,7 +47,17 @@ func main() {
 	once := flag.Bool("once", false, "print the current card and exit")
 	flag.Parse()
 
+	if *interval <= 0 {
+		log.Fatal("interval must be positive")
+	}
+	if *idleAfter <= 0 {
+		log.Fatal("idle-after must be positive")
+	}
+
 	*dbPath = expandHome(*dbPath)
+	if *dbPath == "" {
+		log.Fatal("could not resolve the database path")
+	}
 
 	if *once {
 		printOnce(*dbPath, *idleAfter)
@@ -55,21 +72,23 @@ func main() {
 		return
 	}
 
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-signals
+		clearPresence()
+		if discordClient != nil {
+			discordClient.Close()
+		}
+		os.Exit(0)
+	}()
+
 	connectDiscord(*clientID, *exitWhenClosed)
 
 	if *doctor {
 		runDoctor()
 		return
 	}
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-signals
-		clearPresence()
-		discordClient.Close()
-		os.Exit(0)
-	}()
 
 	lastReadError := ""
 	tick := func() {
@@ -183,20 +202,43 @@ func presenceText(snapshot *Snapshot) (string, string) {
 	}
 
 	if snapshot == nil {
-		return details, "OpenCode"
+		return truncate(details, maxFieldLength), "OpenCode"
 	}
 
-	model := snapshot.Model
-	if model == "" {
-		model = "OpenCode"
+	state := ""
+	if snapshot.Busy {
+		model := snapshot.Model
+		if model == "" {
+			model = "OpenCode"
+		}
+		state = fmt.Sprintf(
+			"%s | %s tokens | %s",
+			model,
+			formatTokens(snapshot.Tokens),
+			formatCost(snapshot.Cost),
+		)
+	} else {
+		project := snapshot.Project
+		if project == "" {
+			project = "OpenCode"
+		}
+		state = fmt.Sprintf(
+			"%s | %s tokens | %s",
+			project,
+			formatTokens(snapshot.Tokens),
+			formatCost(snapshot.Cost),
+		)
 	}
 
-	return details, fmt.Sprintf(
-		"%s | %s tokens | %s",
-		model,
-		formatTokens(snapshot.Tokens),
-		formatCost(snapshot.Cost),
-	)
+	return truncate(details, maxFieldLength), truncate(state, maxFieldLength)
+}
+
+func truncate(value string, max int) string {
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max-1]) + "…"
 }
 
 func printOnce(dbPath string, idleAfter time.Duration) {

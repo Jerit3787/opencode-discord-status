@@ -24,6 +24,16 @@ func TestHasOpenCodeProcess(t *testing.T) {
 			want:   true,
 		},
 		{
+			name:   "windows process",
+			output: `"opencode.exe","1234","Console","1","10,000 K"` + "\n",
+			want:   true,
+		},
+		{
+			name:   "windows unrelated",
+			output: `"node.exe","1234","Console","1","10,000 K"` + "\n",
+			want:   false,
+		},
+		{
 			name:   "unrelated",
 			output: "/usr/sbin/cfprefsd\n/opt/homebrew/bin/node\n",
 			want:   false,

@@ -21,25 +21,23 @@ Full setup: **[SETUP.md](SETUP.md)**. OpenCode agents can load the
 
 ## Quick start
 
-### 1. Create a Discord application
-
-1. Open the [Discord Developer Portal](https://discord.com/developers/applications)
-   and choose **New Application**.
-2. Name it **OpenCode** (Discord displays `Playing <application name>`).
-3. Copy the **Application ID** from **General Information**.
-
-### 2. Build and run
+### 1. Build and run
 
 ```sh
 git clone https://github.com/Jerit3787/opencode-discord-status.git
 cd opencode-discord-status
 go build -trimpath -o bin/opencode-discord-status .
-./bin/opencode-discord-status --client-id 123456789012345678
+./bin/opencode-discord-status
 ```
 
+It ships with a shared Discord application ID, so there is nothing to configure.
 OpenCode and Discord must be running on the same machine.
 
-### 3. Verify
+To use your own application name instead, create one at the
+[Discord Developer Portal](https://discord.com/developers/applications) and pass
+`--client-id`.
+
+### 2. Verify
 
 ```sh
 ./bin/opencode-discord-status -once
@@ -62,7 +60,7 @@ running. Pair it with a launchd job using `StartInterval`, not `KeepAlive`, so
 launchd checks for OpenCode every 15 seconds:
 
 ```sh
-./bin/opencode-discord-status --client-id 123456789012345678 --exit-when-closed
+./bin/opencode-discord-status --exit-when-closed
 ```
 
 See [SETUP.md](SETUP.md) for the LaunchAgent.
@@ -92,7 +90,7 @@ projects.
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--client-id` | `$DISCORD_CLIENT_ID` | **Required.** Discord Application ID. |
+| `--client-id` | shared app ID | Override with your own Discord Application ID. |
 | `--db` | `~/.local/share/opencode/opencode.db` | OpenCode database. |
 | `--interval` | `2s` | Poll interval. |
 | `--idle-after` | `15m` | Treat a session with no writes for this long as idle. |

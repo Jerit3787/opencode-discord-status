@@ -9,9 +9,8 @@ bottom. If you are an agent working in this repository, the
 - OpenCode V2.
 - The Discord desktop app, running and signed in, on the same machine as
   OpenCode.
-- A Discord Application ID. Create one at
-  <https://discord.com/developers/applications> → **New Application**, then copy
-  the Application ID from **General Information**. No bot token is needed.
+- No Discord Application ID is needed: the binary ships with a shared one. Pass
+  `--client-id` only if you want your own application name.
 - Go 1.26+ to build the binary.
 
 ## Build
@@ -28,7 +27,7 @@ go build -trimpath -o bin/opencode-discord-status .
 ## Run
 
 ```sh
-./bin/opencode-discord-status --client-id 123456789012345678
+./bin/opencode-discord-status
 ```
 
 It polls `~/.local/share/opencode/opencode.db` every two seconds and updates
@@ -52,7 +51,7 @@ DeepSeek V4.1 Flash | 12.3K tokens | $0.0421
 Then check the Discord path independently:
 
 ```sh
-./bin/opencode-discord-status --client-id 123456789012345678 --doctor
+./bin/opencode-discord-status --doctor
 ```
 
 `--doctor` sets a test card for eight seconds and clears it.
@@ -67,7 +66,7 @@ running. Pair it with `StartInterval` so launchd checks for OpenCode every 15
 seconds instead of keeping a stale process alive.
 
 Create `~/Library/LaunchAgents/dev.opencode.discord-watch.plist`. Replace the
-binary path and Application ID:
+binary path:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -80,8 +79,6 @@ binary path and Application ID:
   <key>ProgramArguments</key>
   <array>
     <string>/absolute/path/to/opencode-discord-status/bin/opencode-discord-status</string>
-    <string>--client-id</string>
-    <string>123456789012345678</string>
     <string>--exit-when-closed</string>
     <string>--debug</string>
   </array>
@@ -113,7 +110,7 @@ the same pattern under systemd or your user service manager.
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--client-id` | `$DISCORD_CLIENT_ID` | **Required.** Discord Application ID. |
+| `--client-id` | shared app ID | Override with your own Discord Application ID. |
 | `--db` | `~/.local/share/opencode/opencode.db` | OpenCode database. |
 | `--interval` | `2s` | Poll interval. |
 | `--idle-after` | `15m` | Treat a session with no writes for this long as idle. |

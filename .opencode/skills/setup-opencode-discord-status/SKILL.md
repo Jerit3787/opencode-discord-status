@@ -12,9 +12,8 @@ OpenCode's local SQLite database; there is no plugin and no network.
 
 - Go 1.26+ to build the binary.
 - OpenCode V2 and the Discord desktop app on the same machine, signed in.
-- A Discord Application ID. If the user has none, send them to
-  <https://discord.com/developers/applications> → **New Application** → copy the
-  Application ID. No bot token is needed, and the ID is not a secret.
+- No Discord Application ID is needed: the binary ships with a shared one.
+  `--client-id` only changes the application name Discord shows.
 
 ## Build and run
 
@@ -29,14 +28,14 @@ OpenCode's local SQLite database; there is no plugin and no network.
 2. Run it on the machine with Discord:
 
    ```sh
-   ./bin/opencode-discord-status --client-id 123456789012345678
+   ./bin/opencode-discord-status
    ```
 
 3. Verify:
 
    ```sh
    ./bin/opencode-discord-status -once
-   ./bin/opencode-discord-status --client-id 123456789012345678 --doctor
+   ./bin/opencode-discord-status --doctor
    ```
 
    `-once` prints the card without Discord. `--doctor` sets a test card for

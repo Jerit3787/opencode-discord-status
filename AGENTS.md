@@ -10,7 +10,7 @@ go test ./...
 go vet ./...
 go build -trimpath -o bin/opencode-discord-status .
 ./bin/opencode-discord-status -once
-./bin/opencode-discord-status --client-id <id> --doctor
+./bin/opencode-discord-status --doctor
 ./scripts/build.sh          # cross-compile every platform into bin/
 ```
 
