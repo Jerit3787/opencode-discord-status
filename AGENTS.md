@@ -1,58 +1,45 @@
 # AGENTS.md
 
-Discord Rich Presence for OpenCode V2. Shows project, model, tokens, and cost on
-the user's Discord profile.
+Discord Rich Presence for OpenCode V2. Reads OpenCode's local SQLite database
+and publishes the project, model, tokens, and cost to Discord.
 
 ## Commands
 
 ```sh
-npm test                  # 94 tests, node:test
-npm run typecheck         # tsc --noEmit
-npm run doctor -- <id>    # live Discord check: sets a card for 8s, then clears
-npm run watch -- --client-id <id>                 # database watcher (recommended)
-npm run watch -- --client-id <id> --exit-when-closed   # stop with OpenCode
+go test ./...
+go vet ./...
+go build -trimpath -o bin/opencode-discord-status .
+./bin/opencode-discord-status -once
+./bin/opencode-discord-status --client-id <id> --doctor
+./scripts/build.sh          # cross-compile every platform into bin/
 ```
 
-Node 22.18+ is required for native TypeScript execution.
+Go 1.26+ is required.
 
 ## Architecture
 
-- `index.ts` — package entry, re-exports `src/index.ts`.
-- `src/index.ts` — plugin setup, global per-client hub registry, event subscription.
-- `src/presence.ts` — session state machine, event → snapshot, template variables.
-- `src/db-presence.ts` — SQL + row → snapshot for the database watcher.
-- `src/opencode-db.ts` — read OpenCode's local SQLite database.
-- `src/lifecycle.ts` — detect whether OpenCode is running.
-- `scripts/watch.ts` — database watcher; the recommended path.
-- `src/activity.ts` — rendering, token/cost formatting, Discord payload.
-- `src/hub.ts` — one card per process: elects between open projects and owns the connection.
-- `src/discord/` — zero-dependency Discord IPC client.
+- `main.go` — flags, poll loop, Discord connection, card text.
+- `opencode.go` — SQL, row parsing, busy/idle, session pick, formatting.
+- `lifecycle.go` — detect whether OpenCode is running.
+- `discord/` — minimal Discord IPC client, adapted from `cc-discord-presence`.
+- `discord/conn_unix.go` / `conn_windows.go` — platform sockets.
 
 ## Invariants
 
-- **Database watcher is the simple path.** It reads `session_v2` +
-  `session_message` from `~/.local/share/opencode/opencode.db`. Busy means the
-  newest assistant message has no `time.completed`/`finish`, or
-  `finish: "tool-calls"`. A busy session beats a newer idle one.
-- **Lifecycle belongs to OpenCode.** `--exit-when-closed` clears the card and
-  exits when no OpenCode process is running; the LaunchAgent uses
-  `StartInterval`, not `KeepAlive`.
-- **V2 event names matter.** The plugin is driven by `session.step.started`,
-  `session.step.ended`, and `session.usage.updated`. `session.step.ended` with
-  `finish: "tool-calls"` means the turn continues; any other finish ends it.
-  The older `session.execution.*` and `session.status` events remain as
-  compatibility fallbacks, not the primary source.
-- **One Discord connection per process.** The hub lives on `globalThis` keyed by
-  client id, so hot reloads and multiple project instances reuse it.
-- **No runtime dependencies.** `index.ts` and `src/` must load without
-  `node_modules`; only `import type` may reference `@opencode/plugin`.
-- **Local only.** Everything is the SQLite file and the Discord IPC socket. Do
-  not add a network transport.
-- **Privacy:** session titles are opt-in (`{sessionTitle}`). Never add prompts,
-  message content, or code to the activity.
+- **Database only.** Read `session_v2` and `session_message` from
+  `~/.local/share/opencode/opencode.db`. No plugin and no network access.
+- **Busy means** the newest assistant message has no `time.completed`/`finish`, or
+  `finish: "tool-calls"`. Any other `finish` is idle.
+- **Selection:** busy beats idle, then most recently written. Keep the incumbent
+  unless another session is at least 10 seconds newer.
+- **Lifecycle:** `--exit-when-closed` clears the card and exits when no OpenCode
+  process is running. The LaunchAgent uses `StartInterval`, never `KeepAlive`.
+- **Privacy:** only the project folder name, model, tokens, and cost leave the
+  machine. Never prompts, messages, or code.
+- **Discord client:** keep the IPC framing and the adapted MIT notice in
+  `THIRD_PARTY_NOTICES.md`.
 
-## Setup work
+## Setup
 
 Use the `setup-opencode-discord-status` skill in
-`.opencode/skills/setup-opencode-discord-status/SKILL.md`, or the full guide in
-`SETUP.md`. Prefer `npm run watch`; the plugin is the optional event-driven path.
+`.opencode/skills/setup-opencode-discord-status/SKILL.md`, or `SETUP.md`.

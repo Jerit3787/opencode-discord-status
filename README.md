@@ -2,232 +2,129 @@
 
 [![CI](https://github.com/Jerit3787/opencode-discord-status/actions/workflows/ci.yml/badge.svg)](https://github.com/Jerit3787/opencode-discord-status/actions/workflows/ci.yml)
 
-Discord Rich Presence for [OpenCode](https://opencode.ai). Your Discord profile shows the project you are in, the model doing the work, and how long the current turn has been running.
+Discord Rich Presence for [OpenCode](https://opencode.ai). Your Discord profile
+shows the project you are in, the model doing the work, the token count, and the
+session cost.
 
 ```
 Playing OpenCode
-opencode-discord-status
-DeepSeek V4.1 Flash · 12.3K tokens · $0.0421
-00:42 elapsed
+Working on: opencode-discord-status
+DeepSeek V4.1 Flash | 12.3K tokens | $0.0421
 ```
 
-It talks to the Discord desktop app over its local IPC socket. There is no bot token, no OAuth, and no network traffic.
+It reads OpenCode's local SQLite database and talks to the Discord desktop app
+over its local IPC socket. No plugin, no server connection, no bot token, and no
+network traffic.
 
-Full setup and troubleshooting: **[SETUP.md](SETUP.md)**. OpenCode agents can load the `setup-opencode-discord-status` skill in `.opencode/skills/`.
+Full setup: **[SETUP.md](SETUP.md)**. OpenCode agents can load the
+`setup-opencode-discord-status` skill in `.opencode/skills/`.
 
-## One command for your agent
-
-Replace the Application ID and run:
-
-```sh
-opencode run "Set up Discord Rich Presence for OpenCode from https://github.com/Jerit3787/opencode-discord-status using Discord Application ID <YOUR_APPLICATION_ID>. Use the database watcher, not the plugin. Read SETUP.md first. Clone it to ~/.config/opencode/plugins/opencode-discord-status and run 'npm run watch -- --client-id <YOUR_APPLICATION_ID>' on the machine where Discord runs. Verify the card appears before saying it is done."
-```
-
-See **[PROMPT.md](PROMPT.md)** for the paste-into-any-agent version.
-
-## Simplest: watch the database
-
-No plugin entry and no config edit.
-
-```sh
-cd /path/to/opencode-discord-status
-npm run watch -- --client-id 123456789012345678
-```
-
-It polls `~/.local/share/opencode/opencode.db` every two seconds, picks the
-newest session, and derives busy/idle from the last assistant message. OpenCode
-and Discord must be running on the same machine.
-
-Add `--exit-when-closed` to stop when OpenCode closes: the watcher clears the
-card and exits, so nothing is left behind. That is the mode the LaunchAgent in
-[SETUP.md](SETUP.md) uses.
-
-This reads OpenCode's internal schema, so a major upgrade can change it. The
-plugin below uses the event stream instead and reacts instantly.
-
-## Quick start (plugin)
+## Quick start
 
 ### 1. Create a Discord application
 
-1. Open the [Discord Developer Portal](https://discord.com/developers/applications) and choose **New Application**.
-2. Name it **OpenCode** (or anything else — Discord displays `Playing <application name>`).
+1. Open the [Discord Developer Portal](https://discord.com/developers/applications)
+   and choose **New Application**.
+2. Name it **OpenCode** (Discord displays `Playing <application name>`).
 3. Copy the **Application ID** from **General Information**.
 
-Your Discord desktop app must be running on the same machine as OpenCode.
-
-### 2. Add the plugin to OpenCode
-
-In your project's `opencode.json` / `opencode.jsonc`:
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    {
-      "package": "./opencode-discord-status",
-      "options": {
-        "clientId": "123456789012345678"
-      }
-    }
-  ]
-}
-```
-
-Use an absolute path (`"/Users/you/opencode-discord-status"`) if the plugin lives outside the project, or publish the package and use its name. A local path must point at the plugin directory: OpenCode loads its root `index.ts`.
-
-There is no build step and no runtime dependency, so `npm install` is only needed to run the tests or `doctor`.
-
-`clientId` must be a string. Discord IDs are larger than JavaScript's safe integer range, so an unquoted number silently loses digits.
-
-Optional logo: in the Discord Developer Portal open **Rich Presence → Art Assets**, upload an image, and name the asset `opencode`. Then add:
-
-```jsonc
-"largeImage": "opencode",
-"largeText": "OpenCode"
-```
-
-### 3. Reload the config
-
-OpenCode watches config files and reloads plugins after a save; `/reload` forces it. The status should appear within a few seconds. Verify the Discord side independently with:
+### 2. Build and run
 
 ```sh
-npm run doctor -- 123456789012345678
+git clone https://github.com/Jerit3787/opencode-discord-status.git
+cd opencode-discord-status
+go build -trimpath -o bin/opencode-discord-status .
+./bin/opencode-discord-status --client-id 123456789012345678
 ```
 
-This sets a test presence for eight seconds and then clears it.
+OpenCode and Discord must be running on the same machine.
 
-## What gets shown
+### 3. Verify
 
-| State | Line 1 (`details`) | Line 2 (`state`) | Timer |
-| --- | --- | --- | --- |
-| Working | project folder name | model · tokens · cost | elapsed time |
-| Idle | `Idle` | project · tokens · cost | hidden |
-
-For example, a busy session reads `opencode-discord-status` over
-`DeepSeek V4.1 Flash · 12.3K tokens · $0.0421`.
-
-Defaults are deliberately boring and private: the session title is **not** shown. To show it:
-
-```jsonc
-{
-  "details": "Working on {project}",
-  "state": "{sessionTitle}"
-}
+```sh
+./bin/opencode-discord-status -once
 ```
 
-Token and cost totals come from OpenCode's own session accounting and refresh
-each time a run finishes, so the numbers on the card track the session rather
-than the whole machine.
+That prints the card it would publish, without touching Discord:
 
-## Configuration
+```
+Working on: opencode-discord-status
+DeepSeek V4.1 Flash | 12.3K tokens | $0.0421
+```
 
-All options live under the plugin's `options` object.
+In Discord, enable **User Settings → Activity Privacy → Display current activity
+as a status message**.
 
-| Option | Default | Description |
+## Run only while OpenCode is open
+
+`--exit-when-closed` clears the card and exits when no OpenCode process is
+running. Pair it with a launchd job using `StartInterval`, not `KeepAlive`, so
+launchd checks for OpenCode every 15 seconds:
+
+```sh
+./bin/opencode-discord-status --client-id 123456789012345678 --exit-when-closed
+```
+
+See [SETUP.md](SETUP.md) for the LaunchAgent.
+
+## What it reads
+
+`~/.local/share/opencode/opencode.db` (SQLite), from the V2 tables:
+
+| Table | Supplies |
+| --- | --- |
+| `session_v2` | directory, model, agent, cost, tokens, last update |
+| `session_message` | the last assistant message: `time.completed` and `finish` |
+
+Busy and idle:
+
+- no `time.completed` and no `finish` → streaming, **busy**
+- `finish: "tool-calls"` → waiting on tools, **busy**
+- any other `finish` → **idle**
+- no writes for `--idle-after` (default 15 minutes) → **idle**
+
+When several sessions are open, a busy session beats an idle one, then the most
+recently written wins. The session already on the card is kept unless another is
+clearly newer (10 seconds), so the card does not flicker between two active
+projects.
+
+## Flags
+
+| Flag | Default | Description |
 | --- | --- | --- |
-| `clientId` | — | **Required.** Discord Application ID, as a string. |
-| `enabled` | `true` | Set to `false` to disable without removing the plugin. |
-| `details` | `{project}` | Top line while working. |
-| `state` | `{model} · {tokens} · {cost}` | Bottom line while working. |
-| `idleDetails` | `Idle` | Top line while idle. |
-| `idleState` | `{project} · {tokens} · {cost}` | Bottom line while idle. |
-| `showElapsed` | `true` | Show the elapsed timer while working. |
-| `largeImage` | — | Discord asset key for the large image. |
-| `largeText` | `OpenCode` | Hover text for the large image. |
-| `smallImage` | — | Discord asset key for the small image. |
-| `smallText` | — | Hover text for the small image. |
-| `buttons` | `[]` | Up to two `{ "label": "...", "url": "https://..." }` buttons. |
-| `minUpdateIntervalMs` | `4000` | Minimum gap between presence updates, clamped to 1000–60000. Values below ~4000 may hit Discord's rate limit. |
-| `reconnect` | `true` | Keep retrying while Discord is closed. |
-| `debug` | `false` | Log connection and event details. |
-
-### Template variables
-
-`details`, `state`, `idleDetails`, and `idleState` support:
-
-- `{project}` — project folder name
-- `{sessionTitle}` — current session title
-- `{model}` — model display name
-- `{tokens}` — session token count with its label, e.g. `12.3K tokens`
-- `{tokenCount}` — the bare count, e.g. `12.3K`, for compact layouts
-- `{cost}` — session cost in USD, e.g. `$0.0421`
-- `{agent}` — active agent
-- `{status}` — `Working`, `Retrying`, or `Idle`
-- `{attempt}` — retry attempt number
-
-`{tokens}` counts input plus output. Cache reads and writes are left out
-because they run into the millions on every request; they are already part of
-`{cost}`.
-
-Missing values collapse cleanly, so `"Working on {project}"` becomes `Working on` when there is no project.
-
-### Buttons
-
-```jsonc
-"buttons": [
-  { "label": "OpenCode", "url": "https://opencode.ai" },
-  { "label": "Docs", "url": "https://opencode.ai/docs" }
-]
-```
-
-Only `http` and `https` URLs are accepted, and Discord shows at most two.
-
-## Privacy
-
-Only the strings you configure are sent to Discord. With the default templates that is the project folder name, model name, and elapsed time.
-
-If you use `{sessionTitle}`, remember that session titles can contain customer names, ticket IDs, or other sensitive text. Discord displays activity to anyone who can see your profile, depending on their and your activity privacy settings.
-
-The session title is read only when a template needs it (or when OpenCode pushes a rename event). Message content, prompts, and code are never read.
-
-## Troubleshooting
-
-**`Discord is not reachable`** — start the Discord desktop app and sign in. The plugin retries in the background when `reconnect` is enabled.
-
-**`doctor` says no socket was found** — Discord is not running, or it uses a non-standard socket. Set `DISCORD_IPC_PATH` to the socket path and retry:
-
-```sh
-DISCORD_IPC_PATH=/run/user/1000/discord-ipc-0 npm run doctor -- 123456789012345678
-```
-
-Flatpak, Snap, Vesktop, and multiple Discord clients are probed automatically on Linux.
-
-**Presence is set but not visible** — in Discord open **User Settings → Activity Privacy** and enable **Display current activity as a status message**.
-
-**The app name is wrong** — Discord shows the name of your Discord application. Rename the application in the developer portal.
-
-**Updates feel delayed** — Discord rate-limits presence updates. The default four-second throttle keeps the plugin inside that limit.
-
-**Presence goes quiet after restarting OpenCode a few times** — Discord only serves a small number of connections per application ID, and an earlier build of this plugin opened a fresh one on every reload. Connections are now shared per process, so restarting OpenCode once after upgrading clears the stale ones.
-
-**The card stays after quitting OpenCode** — on macOS, closing the window does not quit the app; use **⌘Q**. Even then the desktop app can leave its `opencode-cli serve --service` helper running. The plugin watches for that: once the host is gone it drops the Discord socket, and Discord clears the activity when the connection closes. A hard kill clears it too, because Discord ties the activity to the process that set it.
+| `--client-id` | `$DISCORD_CLIENT_ID` | **Required.** Discord Application ID. |
+| `--db` | `~/.local/share/opencode/opencode.db` | OpenCode database. |
+| `--interval` | `2s` | Poll interval. |
+| `--idle-after` | `15m` | Treat a session with no writes for this long as idle. |
+| `--exit-when-closed` | `false` | Clear and exit when OpenCode is not running. |
+| `--debug` | `false` | Log each published card. |
+| `--doctor` | `false` | Set a test card for 8 seconds, then clear it. |
+| `--once` | `false` | Print the current card and exit. |
 
 ## How it works
 
-- The recommended path watches OpenCode's SQLite database: `session_v2` supplies the session totals, and the newest `session_message` supplies the busy/idle signal.
-- OpenCode V2 plugin hooks load the plugin and expose the event stream.
-- The card is driven by `session.step.started` / `session.step.ended` (which carry the model, agent, tokens, and cost) plus `session.usage.updated`. `session.step.ended` reports `finish: "tool-calls"` while a turn continues, and any other finish ends it. The older `session.execution.*` and `session.status` events are still honoured.
-- Concurrent sessions are ranked by recent activity; the newest busy session wins.
-- One plugin instance runs per open project, so a hub elects a single owner for the card: working beats idle, then the most recently active project wins. The card does not flicker between open projects.
-- Session metadata (title, model, agent, project, token and cost totals) is fetched lazily and refreshed when a run finishes.
-- A zero-dependency Discord RPC client finds the local socket, performs the `v: 1` handshake, sends `SET_ACTIVITY`, answers pings, coalesces updates, and reconnects with backoff.
-- One Discord connection is shared per process, however many times OpenCode loads the plugin.
-- On exit the socket is closed, and an orphan watch clears the card if the host process disappears without running cleanup.
+- A Go daemon reads the SQLite database with `modernc.org/sqlite` (pure Go, no cgo).
+- The last assistant message decides busy/idle; the session row supplies model,
+  agent, tokens, and cost.
+- A small Discord IPC client performs the `v: 1` handshake and sends
+  `SET_ACTIVITY` over the local socket. It reconnects once if Discord restarts.
+- No plugin entry and no OpenCode restart are needed.
 
 ## Development
 
-Requires Node 22.18+ for native TypeScript execution. Install dependencies once before running the tests or the doctor:
+Requires Go 1.26+.
 
 ```sh
-npm install
-npm test
-npm run typecheck
+go test ./...
+go vet ./...
+go build -trimpath -o bin/opencode-discord-status .
 ```
 
-The test suite runs against an in-process fake Discord IPC server, so it does not need Discord or a real application ID. It has also been smoke-tested against OpenCode 2.1.3 with a fake Discord socket: the host loads `index.ts`, connects, publishes the idle activity, and clears it on unload.
-
-The npm name `opencode-discord-presence` was already taken, hence `opencode-discord-status`. Rename the package if you publish your own build.
+`scripts/build.sh` cross-compiles darwin, linux, and windows binaries into
+`bin/`.
 
 ## License
 
-MIT
+MIT. The Discord IPC client in `discord/` is adapted from
+[cc-discord-presence](https://github.com/tsanva/cc-discord-presence); see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

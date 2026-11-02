@@ -5,90 +5,81 @@ description: Use when installing, configuring, or troubleshooting opencode-disco
 
 # Set up opencode-discord-status
 
-Show OpenCode sessions on Discord: project, model, tokens, and cost.
+Show OpenCode sessions on Discord: project, model, tokens, and cost. It reads
+OpenCode's local SQLite database; there is no plugin and no network.
 
 ## Before you start
 
+- Go 1.26+ to build the binary.
 - OpenCode V2 and the Discord desktop app on the same machine, signed in.
 - A Discord Application ID. If the user has none, send them to
   <https://discord.com/developers/applications> → **New Application** → copy the
   Application ID. No bot token is needed, and the ID is not a secret.
 
-## Preferred: database watcher
+## Build and run
 
-No plugin entry, no config edit, no OpenCode restart.
-
-1. Clone the repo:
+1. Clone and build:
 
    ```sh
    git clone https://github.com/Jerit3787/opencode-discord-status.git
+   cd opencode-discord-status
+   go build -trimpath -o bin/opencode-discord-status .
    ```
 
-2. Run the watcher on the machine with Discord:
+2. Run it on the machine with Discord:
 
    ```sh
-   cd opencode-discord-status
-   npm run watch -- --client-id 123456789012345678
+   ./bin/opencode-discord-status --client-id 123456789012345678
    ```
 
-3. Verify: the card should appear within two seconds. `--debug` logs what it
-   publishes. In Discord, enable **User Settings → Activity Privacy → Display
-   current activity as a status message**.
+3. Verify:
 
-Add `--exit-when-closed` to clear the card and exit when OpenCode stops. Pair it
-with a launchd job using `StartInterval` (not `KeepAlive`) so it checks for
-OpenCode every 15 seconds; see `SETUP.md`.
+   ```sh
+   ./bin/opencode-discord-status -once
+   ./bin/opencode-discord-status --client-id 123456789012345678 --doctor
+   ```
 
-The watcher reads `~/.local/share/opencode/opencode.db`:
+   `-once` prints the card without Discord. `--doctor` sets a test card for
+   eight seconds.
+
+4. In Discord, enable **User Settings → Activity Privacy → Display current
+   activity as a status message**.
+
+## Run only while OpenCode is open
+
+Add `--exit-when-closed`: it clears the card and exits when no OpenCode process
+is running. Use a launchd job with `StartInterval` (not `KeepAlive`) so it
+starts again within 15 seconds of OpenCode reopening. The full plist is in
+`SETUP.md`.
+
+## What it reads
+
+`~/.local/share/opencode/opencode.db`:
 
 - `session_v2` supplies directory, model, agent, cost, and tokens.
 - The newest `session_message` supplies `time.completed` and `finish`.
 - Missing `completed`/`finish`, or `finish: "tool-calls"`, means busy.
 - Any other `finish` means idle.
-- A busy session beats a newer idle one; then the most recently written wins.
+- A busy session beats an idle one; the current session is kept unless another
+  is clearly newer (10 seconds).
 
-The schema is internal. If a major OpenCode upgrade changes it, use the plugin.
-
-## Plugin install (optional)
-
-Use this when the user wants instant updates or prefers the event surface.
-
-1. Clone as above.
-2. Back up and edit `~/.config/opencode/opencode.jsonc` (respect
-   `$XDG_CONFIG_HOME`):
-
-   ```jsonc
-   {
-     "plugins": [
-       {
-         "package": "/absolute/path/to/opencode-discord-status",
-         "options": { "clientId": "123456789012345678" }
-       }
-     ]
-   }
-   ```
-
-   Preserve existing entries. Keep `clientId` a **string** of 17–20 digits. If
-   the file has comments, edit it as text.
-
-3. Save; OpenCode reloads config automatically. `/reload` forces it.
-4. Verify with `opencode plugin list` and
-   `npm run doctor -- 123456789012345678`.
+The schema is internal. If a major OpenCode upgrade changes it, update
+`opencode.go`.
 
 ## Common mistakes
 
 | Mistake | Fix |
 | --- | --- |
-| Installing the plugin when the watcher is enough | Prefer `npm run watch`; it needs no config. |
-| Watcher keeps running after OpenCode closes | Add `--exit-when-closed` and a launchd `StartInterval` job. |
-| Using `plugin` instead of `plugins` | V2 uses `plugins`; keep existing entries. |
-| Unquoted `clientId` | Must be a string; 18-digit numbers lose precision. |
-| Card stays after quitting | macOS: use ⌘Q; closing the window is not quitting. |
+| Running the binary somewhere without Discord | Run it on the machine with the Discord desktop app. |
+| Expecting it to keep running after OpenCode closes | Add `--exit-when-closed`; without it the watcher keeps polling. |
+| Using `KeepAlive` in launchd | Use `StartInterval: 15` so it checks for OpenCode. |
+| Database path differs | Pass `--db /path/to/opencode.db`. |
+| Card is set but invisible | Enable **Display current activity as a status message**. |
+| Card stays after quitting on macOS | Closing the window is not quitting; use ⌘Q. |
 
 ## Verify the result
 
-- Watcher: `--debug` prints `publishing {...}` and `Connected to Discord`.
-- Plugin: `opencode plugin list` lists it.
-- `grep "opencode-discord-status" ~/.local/share/opencode/log/opencode.log`
-  shows no errors.
+- `-once` prints a project and a state line.
+- `--doctor` shows a test card for eight seconds.
+- `--debug` logs each published card and the Discord connection.
 - If nothing appears, check Discord Activity Privacy first.
