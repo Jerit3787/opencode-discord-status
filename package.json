@@ -1,0 +1,42 @@
+{
+  "name": "opencode-discord-status",
+  "version": "0.1.0",
+  "description": "Discord Rich Presence for OpenCode — show your project, model, and agent while you code.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "discord",
+    "discord-rpc",
+    "rich-presence"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "test:watch": "node --test --watch test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "doctor": "node scripts/doctor.ts",
+    "bridge": "node scripts/bridge.ts"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": "^2.1.0"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "^2.2.5",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
