@@ -38,5 +38,9 @@
   },
   "engines": {
     "node": ">=22.18"
+  },
+  "overrides": {
+    "minimatch": "^11.0.4",
+    "glob": "^14.0.3"
   }
 }
