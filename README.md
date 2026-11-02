@@ -20,12 +20,35 @@ Full setup, remote SSH hosts, and troubleshooting: **[SETUP.md](SETUP.md)**. Ope
 Replace the Application ID and run:
 
 ```sh
-opencode run "Set up Discord Rich Presence for OpenCode from https://github.com/Jerit3787/opencode-discord-status using Discord Application ID <YOUR_APPLICATION_ID>. Read SETUP.md and .opencode/skills/setup-opencode-discord-status/SKILL.md first. Clone it to ~/.config/opencode/plugins/opencode-discord-status and install it for this machine. If this workspace is on a remote SSH host, configure discord:false and stateFile here, then give me the exact npm run bridge command to run on the machine with Discord. Preserve existing config entries and verify with 'opencode plugin list' and 'npm run doctor' before saying it is done."
+opencode run "Set up Discord Rich Presence for OpenCode from https://github.com/Jerit3787/opencode-discord-status using Discord Application ID <YOUR_APPLICATION_ID>. Use the database watcher, not the plugin. Read SETUP.md first. Clone it to ~/.config/opencode/plugins/opencode-discord-status and run 'npm run watch -- --client-id <YOUR_APPLICATION_ID>' on the machine where Discord runs. If this workspace is on a remote SSH host, give me the exact command to run on my laptop with --ssh. Verify the card appears before saying it is done."
 ```
 
 See **[PROMPT.md](PROMPT.md)** for the paste-into-any-agent version.
 
-## Quick start
+## Simplest: watch the database
+
+No plugin entry, no config edit, no remote install.
+
+```sh
+cd /path/to/opencode-discord-status
+npm run watch -- --client-id 123456789012345678
+```
+
+For a remote SSH workspace, read that host's database instead:
+
+```sh
+npm run watch -- --ssh user@host --client-id 123456789012345678
+```
+
+It polls `~/.local/share/opencode/opencode.db` every two seconds, picks the
+newest session, and derives busy/idle from the last assistant message. On a
+remote host it needs `sqlite3` or `python3`; the loop tries both.
+
+This reads OpenCode's internal schema, so a major upgrade can change it. The
+plugin below uses the event stream instead and is the better choice if you want
+the card to react instantly.
+
+## Quick start (plugin)
 
 ### 1. Create a Discord application
 

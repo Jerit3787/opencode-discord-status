@@ -6,10 +6,12 @@ cost on the user's Discord profile.
 ## Commands
 
 ```sh
-npm test                  # 94 tests, node:test
+npm test                  # 103 tests, node:test
 npm run typecheck         # tsc --noEmit
 npm run doctor -- <id>    # live Discord check: sets a card for 8s, then clears
-npm run bridge -- --ssh <host> --client-id <id>   # remote SSH relay
+npm run watch -- --client-id <id>                 # database watcher (recommended)
+npm run watch -- --ssh <host> --client-id <id>    # remote database over SSH
+npm run bridge -- --ssh <host> --client-id <id>   # plugin relay
 ```
 
 Node 22.18+ is required for native TypeScript execution.
@@ -19,6 +21,9 @@ Node 22.18+ is required for native TypeScript execution.
 - `index.ts` — package entry, re-exports `src/index.ts`.
 - `src/index.ts` — plugin setup, global per-client hub registry, event subscription.
 - `src/presence.ts` — session state machine, event → snapshot, template variables.
+- `src/db-presence.ts` — SQL + row → snapshot for the database watcher.
+- `src/opencode-db.ts` — read OpenCode's local SQLite database.
+- `scripts/watch.ts` — database watcher, local or over SSH.
 - `src/activity.ts` — rendering, token/cost formatting, Discord payload.
 - `src/hub.ts` — one card per process: elects between open projects, mirrors to a state file, owns the transport.
 - `src/state-file.ts` — atomic JSON frame writer for remote hosts.
@@ -32,6 +37,10 @@ Node 22.18+ is required for native TypeScript execution.
   `finish: "tool-calls"` means the turn continues; any other finish ends it.
   The older `session.execution.*` and `session.status` events remain as
   compatibility fallbacks, not the primary source.
+- **Database watcher is the simple path.** It reads `session_v2` +
+  `session_message` from `~/.local/share/opencode/opencode.db`. Busy means the
+  newest assistant message has no `time.completed`/`finish`, or
+  `finish: "tool-calls"`. The plugin remains the event-driven option.
 - **One Discord connection per process.** The hub lives on `globalThis` keyed by
   client id, so hot reloads and multiple project instances reuse it.
 - **No runtime dependencies.** `index.ts` and `src/` must load without

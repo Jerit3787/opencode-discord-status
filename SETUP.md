@@ -14,7 +14,42 @@ bottom. If you are an agent working in this repository, the
   the Application ID from **General Information**. No bot token is needed.
 - Node.js 22.18+ only if you want to run the tests, `doctor`, or the bridge.
 
-## Local install
+## Database watcher (simplest)
+
+No plugin entry, no config edit, and nothing to install on a remote host.
+
+```sh
+cd /path/to/opencode-discord-status
+npm run watch -- --client-id 123456789012345678
+```
+
+For a remote SSH workspace, run it on the machine with Discord and point it at
+the host:
+
+```sh
+npm run watch -- --ssh user@host --client-id 123456789012345678
+```
+
+Options: `--port`, `--identity`, `--ssh-option`, `--interval <ms>`,
+`--idle-after <seconds>`, `--db <path>`, `--debug`.
+
+Every two seconds it runs a read-only query against
+`~/.local/share/opencode/opencode.db` (or the same path over SSH). It reads
+`session_v2` and the newest `session_message`:
+
+- no `time.completed` and no `finish` → streaming, **busy**
+- `finish: "tool-calls"` → waiting on tools, **busy**
+- any other `finish` → **idle**
+- no writes for `--idle-after` (default 15 minutes) → **idle**
+
+On the host it needs `sqlite3` or `python3`; the remote loop tries both. Most
+macOS and Linux machines already have one of them.
+
+This reads OpenCode's internal schema, so a major upgrade can change it. The
+plugin below uses the event stream and reacts instantly; use it if you prefer
+that surface.
+
+## Plugin install (optional)
 
 ### 1. Get the plugin
 
@@ -70,7 +105,7 @@ npm run doctor -- 123456789012345678
 Finally, in Discord open **User Settings → Activity Privacy** and enable
 **Display current activity as a status message**.
 
-## Remote SSH hosts
+## Remote SSH hosts (plugin)
 
 When OpenCode runs on an SSH host (for example a server added to the desktop app
 over SSH), the plugin runs there. That machine has no Discord socket, so the

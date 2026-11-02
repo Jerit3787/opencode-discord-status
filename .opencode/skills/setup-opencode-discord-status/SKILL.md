@@ -1,6 +1,6 @@
 ---
 name: Set up opencode-discord-status
-description: Use when installing, configuring, or troubleshooting opencode-discord-status (Discord Rich Presence for OpenCode), including remote SSH hosts and the local bridge.
+description: Use when installing, configuring, or troubleshooting opencode-discord-status (Discord Rich Presence for OpenCode), including remote SSH hosts and the database watcher.
 ---
 
 # Set up opencode-discord-status
@@ -9,32 +9,58 @@ Show OpenCode sessions on Discord: project, model, tokens, and cost.
 
 ## Before you start
 
-- OpenCode V2. Its config uses `plugins`; the old `plugin` key is deprecated.
+- OpenCode V2.
 - Discord desktop running and signed in on the machine that should show the card.
 - A Discord Application ID. If the user has none, send them to
   <https://discord.com/developers/applications> → **New Application** → copy the
   Application ID. No bot token is needed, and the ID is not a secret.
 
-## Decide the topology
+## Preferred: database watcher
 
-1. **Local** — OpenCode and Discord run on the same machine. Use the local install.
-2. **Remote SSH** — OpenCode runs on a host reached over SSH and Discord runs on
-   the laptop. Use the remote install.
+No plugin entry, no config edit, no OpenCode restart.
 
-If unsure, compare `hostname` on the machine running OpenCode with the machine
-running Discord. A remote session has no Discord socket, so a local install
-there will only log `Discord is not reachable`.
-
-## Local install
-
-1. Clone the plugin somewhere stable:
+1. Clone the repo:
 
    ```sh
    git clone https://github.com/Jerit3787/opencode-discord-status.git
    ```
 
-2. Back up and edit the global config — `~/.config/opencode/opencode.jsonc`
-   (respect `$XDG_CONFIG_HOME`; the file may be `.json`):
+2. Run the watcher on the machine with Discord:
+
+   ```sh
+   cd opencode-discord-status
+   npm run watch -- --client-id 123456789012345678
+   ```
+
+   For an SSH workspace, run it on the laptop and point it at the host:
+
+   ```sh
+   npm run watch -- --ssh user@host --client-id 123456789012345678
+   ```
+
+   Add `--port`, `--identity`, or `--ssh-option ProxyJump=bastion` if needed.
+   The host needs `sqlite3` or `python3`; the remote loop tries both.
+
+3. Verify: the card should appear within two seconds. `--debug` logs the SSH and
+   Discord connections. In Discord, enable **User Settings → Activity Privacy →
+   Display current activity as a status message**.
+
+The watcher reads `~/.local/share/opencode/opencode.db`:
+
+- `session_v2` supplies directory, model, agent, cost, and tokens.
+- The newest `session_message` supplies `time.completed` and `finish`.
+- Missing `completed`/`finish`, or `finish: "tool-calls"`, means busy.
+- Any other `finish` means idle.
+
+The schema is internal. If a major OpenCode upgrade changes it, use the plugin.
+
+## Plugin install (optional)
+
+Use this when the user wants instant updates or prefers the event surface.
+
+1. Clone as above.
+2. Back up and edit `~/.config/opencode/opencode.jsonc` (respect
+   `$XDG_CONFIG_HOME`):
 
    ```jsonc
    {
@@ -47,96 +73,39 @@ there will only log `Discord is not reachable`.
    }
    ```
 
-   - Preserve every existing entry in `plugins`.
-   - Keep `clientId` a **string** of 17–20 digits.
-   - If the file contains comments, edit it as text; do not
-     `JSON.parse`/`JSON.stringify` it.
+   Preserve existing entries. Keep `clientId` a **string** of 17–20 digits. If
+   the file has comments, edit it as text.
 
-3. Save. OpenCode reloads config automatically; `/reload` forces a reload.
+3. Save; OpenCode reloads config automatically. `/reload` forces it.
+4. Verify with `opencode plugin list` and
+   `npm run doctor -- 123456789012345678`.
 
-4. Verify:
+### Remote plugin
 
-   ```sh
-   opencode plugin list    # should list opencode-discord-status
-   cd /absolute/path/to/opencode-discord-status
-   npm run doctor -- 123456789012345678
-   ```
+Only when the user explicitly wants the plugin on an SSH host:
 
-   `doctor` sets a test presence for eight seconds.
-
-5. In Discord: **User Settings → Activity Privacy → Display current activity as
-   a status message**.
-
-Done when a session shows the project over `<model> · <tokens> · <cost>`.
-
-## Remote SSH install
-
-The plugin runs on the SSH host. Discord lives on the laptop, so the host writes
-a state file and a bridge on the laptop publishes it.
-
-1. On the laptop, copy the plugin to the host:
-
-   ```sh
-   rsync -av --exclude node_modules --exclude test --exclude .git \
-     /absolute/path/to/opencode-discord-status \
-     user@host:~/.config/opencode/plugins/
-   ```
-
-2. On the host, add to `~/.config/opencode/opencode.jsonc` (replace
-   `/home/you` with the real home):
-
-   ```jsonc
-   {
-     "plugins": [
-       {
-         "package": "/home/you/.config/opencode/plugins/opencode-discord-status",
-         "options": {
-           "clientId": "123456789012345678",
-           "discord": false,
-           "stateFile": "~/.local/state/opencode-discord-status/presence.json"
-         }
-       }
-     ]
-   }
-   ```
-
-   Reconnect the SSH workspace (or `/reload`) so the host loads it.
-
-3. On the laptop, run the bridge:
-
-   ```sh
-   cd /absolute/path/to/opencode-discord-status
-   npm run bridge -- --ssh user@host --client-id 123456789012345678
-   ```
-
-   Add `--port`, `--identity`, or `--ssh-option ProxyJump=bastion` if needed.
-
-4. Verify on the host:
-
-   ```sh
-   ssh user@host 'cat ~/.local/state/opencode-discord-status/presence.json'
-   ```
-
-   It should print a JSON frame. Run the bridge with `--debug` to see the SSH
-   and Discord connection. The bridge clears the card when the tunnel drops and
-   reconnects with backoff.
-
-For login-time autostart, see the LaunchAgent section of `SETUP.md`.
+1. `rsync -av --exclude node_modules --exclude test --exclude .git`
+   `./opencode-discord-status user@host:~/.config/opencode/plugins/`
+2. On the host, configure `discord: false` and
+   `stateFile: "~/.local/state/opencode-discord-status/presence.json"`.
+3. On the laptop, run
+   `npm run bridge -- --ssh user@host --client-id 123456789012345678`.
 
 ## Common mistakes
 
 | Mistake | Fix |
 | --- | --- |
-| Using `plugin` instead of `plugins` | V2 uses `plugins`; keep existing entries intact. |
-| Unquoted `clientId` | Must be a string; JavaScript loses precision on 18-digit numbers. |
-| Remote install without the bridge | The host has no Discord socket; run the bridge on the laptop. |
-| Bridge but no `stateFile` on the host | Set `discord: false` **and** `stateFile`. |
-| Card stays after quitting | On macOS, closing the window is not quitting. Use ⌘Q. |
+| Installing the plugin when the watcher is enough | Prefer `npm run watch`; it needs no config. |
+| Running the watcher on the SSH host | Run it where Discord is, and add `--ssh host`. |
+| Remote host has no `sqlite3` | The loop falls back to `python3`; install one. |
+| Using `plugin` instead of `plugins` | V2 uses `plugins`; keep existing entries. |
+| Unquoted `clientId` | Must be a string; 18-digit numbers lose precision. |
+| Card stays after quitting | macOS: use ⌘Q; closing the window is not quitting. |
 
 ## Verify the result
 
-- `opencode plugin list` lists the plugin.
+- Watcher: `--debug` shows `ssh <host>` and `Connected to Discord`.
+- Plugin: `opencode plugin list` lists it.
 - `grep "opencode-discord-status" ~/.local/share/opencode/log/opencode.log`
-  shows no connection errors.
-- One Discord IPC connection per OpenCode process is expected.
-- If nothing appears, check Activity Privacy before anything else.
+  shows no errors.
+- If nothing appears, check Discord Activity Privacy first.

@@ -26,7 +26,8 @@
     "test:watch": "node --test --watch test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "doctor": "node scripts/doctor.ts",
-    "bridge": "node scripts/bridge.ts"
+    "bridge": "node scripts/bridge.ts",
+    "watch": "node scripts/watch.ts"
   },
   "peerDependencies": {
     "@opencode/plugin": "^2.1.0"
