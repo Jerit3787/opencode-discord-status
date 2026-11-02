@@ -1,5 +1,7 @@
 # opencode-discord-status
 
+[![CI](https://github.com/Jerit3787/opencode-discord-status/actions/workflows/ci.yml/badge.svg)](https://github.com/Jerit3787/opencode-discord-status/actions/workflows/ci.yml)
+
 Discord Rich Presence for [OpenCode](https://opencode.ai). Your Discord profile shows the project you are in, the model doing the work, and how long the current turn has been running.
 
 ```
