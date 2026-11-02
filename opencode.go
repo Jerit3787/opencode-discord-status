@@ -25,7 +25,12 @@ const sessionQuery = `select
   coalesce(s.tokens_input, 0),
   coalesce(s.tokens_output, 0),
   coalesce(s.time_updated, 0),
-  coalesce(m.data, '')
+  coalesce(m.data, ''),
+  coalesce((
+    select max(u.time_created)
+    from session_message u
+    where u.session_id = s.id and u.type = 'user'
+  ), 0)
 from session_v2 s
 left join session_message m on m.id = (
   select id from session_message
@@ -47,6 +52,9 @@ type SessionRow struct {
 	TokensOutput int64
 	TimeUpdated  int64
 	Message      string
+	// TurnStarted is the latest user message time for this session, which
+	// stays fixed while the assistant works through steps.
+	TurnStarted int64
 }
 
 type messageData struct {
@@ -101,6 +109,7 @@ func readSessions(dbPath string) ([]SessionRow, error) {
 			&row.TokensOutput,
 			&row.TimeUpdated,
 			&row.Message,
+			&row.TurnStarted,
 		); err != nil {
 			return nil, err
 		}
@@ -143,8 +152,14 @@ func analyze(row SessionRow, now time.Time, idleAfter time.Duration) Snapshot {
 		Tokens:    row.TokensInput + row.TokensOutput,
 		Updated:   row.TimeUpdated,
 	}
-	if busy && message != nil && message.Time.Created > 0 {
-		snapshot.StartedAt = time.UnixMilli(message.Time.Created)
+	if busy {
+		started := row.TurnStarted
+		if started == 0 && message != nil {
+			started = message.Time.Created
+		}
+		if started > 0 {
+			snapshot.StartedAt = time.UnixMilli(started)
+		}
 	}
 
 	return snapshot

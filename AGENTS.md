@@ -34,6 +34,9 @@ Go 1.26+ is required.
   unless another session is at least 10 seconds newer.
 - **Lifecycle:** `--exit-when-closed` clears the card and exits when no OpenCode
   process is running. The LaunchAgent uses `StartInterval`, never `KeepAlive`.
+- **Elapsed timer:** start it at the latest user message, not the newest
+  assistant step. Assistant messages are per-step, so using them resets the
+  timer constantly.
 - **Discord IPC state is authoritative.** The client marks itself disconnected
   when the socket closes; `updatePresence` checks `Connected()` before dedupe
   and reconnects, then republishes even if the card text is unchanged.

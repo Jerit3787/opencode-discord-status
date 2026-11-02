@@ -20,6 +20,7 @@ func testRow(overrides func(*SessionRow)) SessionRow {
 		TokensOutput: 460,
 		TimeUpdated:  testNow.UnixMilli() - 1_000,
 		Message:      `{"time":{"created":1699999995000,"streamed":1699999999000},"agent":"build","model":{"id":"deepseek-v4.1-flash"}}`,
+		TurnStarted:  1_699_999_990_000,
 	}
 	if overrides != nil {
 		overrides(&row)
@@ -85,6 +86,17 @@ func TestAnalyzeStreamingIsBusy(t *testing.T) {
 	if snapshot.Tokens != 12_260 {
 		t.Errorf("tokens = %d", snapshot.Tokens)
 	}
+	if snapshot.StartedAt.UnixMilli() != 1_699_999_990_000 {
+		t.Errorf("startedAt = %v", snapshot.StartedAt)
+	}
+}
+
+func TestAnalyzeFallsBackToMessageStartWithoutAUserMessage(t *testing.T) {
+	row := testRow(func(row *SessionRow) {
+		row.TurnStarted = 0
+	})
+
+	snapshot := analyze(row, testNow, 15*time.Minute)
 	if snapshot.StartedAt.UnixMilli() != 1_699_999_995_000 {
 		t.Errorf("startedAt = %v", snapshot.StartedAt)
 	}
@@ -191,7 +203,8 @@ func TestReadSessions(t *testing.T) {
 			session_id text,
 			type text,
 			seq integer,
-			data text
+			data text,
+			time_created integer
 		);
 	`)
 	if err != nil {
@@ -209,8 +222,16 @@ func TestReadSessions(t *testing.T) {
 	}
 
 	_, err = database.Exec(
-		"insert into session_message values (?, ?, ?, ?, ?)",
-		"msg_1", row.SessionID, "assistant", 1, row.Message,
+		"insert into session_message values (?, ?, ?, ?, ?, ?)",
+		"msg_user", row.SessionID, "user", 0, "{}", row.TurnStarted,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = database.Exec(
+		"insert into session_message values (?, ?, ?, ?, ?, ?)",
+		"msg_1", row.SessionID, "assistant", 1, row.Message, 1_699_999_995_000,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -230,5 +251,8 @@ func TestReadSessions(t *testing.T) {
 	}
 	if snapshot.Model != "DeepSeek V4.1 Flash" {
 		t.Errorf("model = %q", snapshot.Model)
+	}
+	if snapshot.StartedAt.UnixMilli() != row.TurnStarted {
+		t.Errorf("startedAt = %v, want %d", snapshot.StartedAt, row.TurnStarted)
 	}
 }
