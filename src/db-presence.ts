@@ -146,7 +146,7 @@ export function buildRemoteScript(
 interval=${seconds}
 sql=${shellQuote(sql)}
 
-if command -v sqlite3 >/dev/null 2>&1; then
+if command -v sqlite3 >/dev/null 2>&1 && sqlite3 :memory: -json 'select 1' >/dev/null 2>&1; then
   while :; do
     out=$(sqlite3 -readonly -json "$db" "$sql" 2>/dev/null) || out='[]'
     printf '%s\\n' "\${out:-[]}"

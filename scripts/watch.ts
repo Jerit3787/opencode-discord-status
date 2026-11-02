@@ -241,13 +241,19 @@ async function main(): Promise<void> {
     connectRemote()
   } else {
     let running = false
+    let lastError = ""
     const tick = async (): Promise<void> => {
       if (running || stopping) return
       running = true
       try {
         await publish(readLocalRow(args.db))
+        lastError = ""
       } catch (error) {
-        logger.warn(`Could not read ${args.db}: ${describe(error)}`)
+        const message = describe(error)
+        if (message !== lastError) {
+          lastError = message
+          logger.warn(`Could not read ${args.db}: ${message}`)
+        }
       } finally {
         running = false
       }
