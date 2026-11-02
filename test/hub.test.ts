@@ -143,29 +143,3 @@ test("drops the socket when the OpenCode host goes away", async () => {
   }
 })
 
-test("mirrors the winning card even when Discord is not published locally", async () => {
-  const mirrored: Array<DiscordActivity | null> = []
-  const client = {
-    start: async () => {},
-    stop: async () => {},
-    destroy: () => {},
-    setActivity: async () => {},
-  }
-  const hub = new PresenceHub(
-    client as never,
-    { debug() {}, warn() {}, error() {} },
-    { mirror: (activity) => mirrored.push(activity) },
-  )
-
-  try {
-    const alpha = hub.join("/work/alpha")
-    alpha.sink.setActivity({ details: "alpha" }, { status: "busy", lastActive: 1 })
-
-    assert.deepEqual(mirrored.at(-1), { details: "alpha" })
-
-    await alpha.leave()
-    assert.equal(mirrored.at(-1), null)
-  } finally {
-    await hub.shutdown()
-  }
-})

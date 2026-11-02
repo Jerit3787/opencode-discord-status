@@ -6,14 +6,12 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import {
-  SESSION_QUERY,
-  buildRemoteScript,
   formatModelName,
-  parseFrame,
+  pickSessionRow,
   snapshotFromRow,
   type SessionRow,
 } from "../src/db-presence.ts"
-import { readLocalRow } from "../src/opencode-db.ts"
+import { readLocalRows } from "../src/opencode-db.ts"
 
 const NOW = 1_700_000_000_000
 const MODEL = JSON.stringify({
@@ -105,23 +103,65 @@ test("no session produces a plain idle card", () => {
   assert.deepEqual(snapshotFromRow(undefined, NOW), { status: "idle" })
 })
 
-test("parses frames and ignores noise", () => {
-  assert.deepEqual(parseFrame("[]"), [])
-  assert.equal(parseFrame(""), undefined)
-  assert.equal(parseFrame("   "), undefined)
-  assert.deepEqual(parseFrame(JSON.stringify([{ session_id: "ses_1" }])), [{ session_id: "ses_1" }])
-  assert.equal(parseFrame("not json"), undefined)
-  assert.equal(parseFrame('{"rows":[]}'), undefined)
+test("a busy session beats a newer idle one", () => {
+  const busy = row({ session_id: "busy", time_updated: NOW - 10_000 })
+  const idle = row({
+    session_id: "idle",
+    time_updated: NOW - 1_000,
+    message: JSON.stringify({
+      time: { created: NOW - 5_000, completed: NOW - 1_000 },
+      finish: "stop",
+    }),
+  })
+
+  assert.equal(pickSessionRow([idle, busy], NOW)?.session_id, "busy")
 })
 
-test("builds a remote loop that prefers sqlite3 and falls back to python", () => {
-  const script = buildRemoteScript("~/.local/share/opencode/opencode.db", 2)
+test("the most recently written busy session wins", () => {
+  const older = row({ session_id: "older", time_updated: NOW - 10_000 })
+  const newer = row({ session_id: "newer", time_updated: NOW - 1_000 })
 
-  assert.match(script, /sqlite3 -readonly -json/)
-  assert.match(script, /command -v python3/)
-  assert.match(script, /"\$HOME\/\.local\/share\/opencode\/opencode\.db"/)
-  assert.match(script, /sleep "\$interval"/)
-  assert.ok(script.includes(SESSION_QUERY.replace(/'/g, `'\\''`)))
+  assert.equal(pickSessionRow([older, newer], NOW)?.session_id, "newer")
+})
+
+test("a small recency gap keeps the session already on the card", () => {
+  const incumbent = row({ session_id: "incumbent", time_updated: NOW - 2_000 })
+  const challenger = row({ session_id: "challenger", time_updated: NOW - 1_000 })
+
+  assert.equal(
+    pickSessionRow([incumbent, challenger], NOW, undefined, { incumbent: "incumbent" })
+      ?.session_id,
+    "incumbent",
+  )
+})
+
+test("a clearly newer busy session takes over", () => {
+  const incumbent = row({ session_id: "incumbent", time_updated: NOW - 30_000 })
+  const challenger = row({ session_id: "challenger", time_updated: NOW - 1_000 })
+
+  assert.equal(
+    pickSessionRow([incumbent, challenger], NOW, undefined, { incumbent: "incumbent" })
+      ?.session_id,
+    "challenger",
+  )
+})
+
+test("a busy session takes over from an idle incumbent", () => {
+  const incumbent = row({
+    session_id: "incumbent",
+    time_updated: NOW - 1_000,
+    message: JSON.stringify({
+      time: { created: NOW - 5_000, completed: NOW - 1_000 },
+      finish: "stop",
+    }),
+  })
+  const challenger = row({ session_id: "challenger", time_updated: NOW - 2_000 })
+
+  assert.equal(
+    pickSessionRow([incumbent, challenger], NOW, undefined, { incumbent: "incumbent" })
+      ?.session_id,
+    "challenger",
+  )
 })
 
 test("reads a busy session from a real SQLite database", async () => {
@@ -182,7 +222,7 @@ test("reads a busy session from a real SQLite database", async () => {
       )
     database.close()
 
-    const snapshot = snapshotFromRow(readLocalRow(path), NOW)
+    const snapshot = snapshotFromRow(readLocalRows(path)[0], NOW)
 
     assert.equal(snapshot.status, "busy")
     assert.equal(snapshot.project, "my-app")

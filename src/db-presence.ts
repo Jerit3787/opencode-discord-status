@@ -1,10 +1,11 @@
-import { basename } from "node:path"
+import { homedir } from "node:os"
+import { basename, join } from "node:path"
 
 import type { ActivitySnapshot } from "./activity.ts"
-import { quoteRemotePath } from "./bridge.ts"
 
 export const DEFAULT_DB_PATH = "~/.local/share/opencode/opencode.db"
 export const DEFAULT_IDLE_AFTER_MS = 15 * 60 * 1_000
+export const DEFAULT_SWITCH_MARGIN_MS = 10_000
 
 /**
  * The newest non-archived session plus its last assistant message.
@@ -31,7 +32,7 @@ left join session_message m on m.id = (
 )
 where s.time_archived is null
 order by s.time_updated desc
-limit 1`
+limit 20`
 
 export interface SessionRow {
   session_id?: string
@@ -69,20 +70,6 @@ const BRANDS: Record<string, string> = {
   mimo: "MiMo",
 }
 
-/** Parse one line of `sqlite3 -json` or Python output. */
-export function parseFrame(line: string): SessionRow[] | undefined {
-  const trimmed = line.trim()
-  if (trimmed.length === 0) return undefined
-
-  try {
-    const parsed: unknown = JSON.parse(trimmed)
-    if (!Array.isArray(parsed)) return undefined
-    return parsed as SessionRow[]
-  } catch {
-    return undefined
-  }
-}
-
 /**
  * Turn a database row into a card.
  *
@@ -95,8 +82,68 @@ export function snapshotFromRow(
   now: number = Date.now(),
   idleAfterMs: number = DEFAULT_IDLE_AFTER_MS,
 ): ActivitySnapshot {
-  if (!row) return { status: "idle" }
+  return row ? analyze(row, now, idleAfterMs).snapshot : { status: "idle" }
+}
 
+export interface PickSessionOptions {
+  /** Session currently on the card. Kept unless another is clearly newer. */
+  incumbent?: string
+  /** How much newer another session must be before it takes over. */
+  switchMarginMs?: number
+}
+
+/**
+ * Choose the session that should own the card: a busy one beats an idle one,
+ * then the most recently written wins. Mirrors the plugin's hub so two open
+ * projects do not flicker between idle and working.
+ */
+export function pickSessionRow(
+  rows: readonly SessionRow[],
+  now: number = Date.now(),
+  idleAfterMs: number = DEFAULT_IDLE_AFTER_MS,
+  options: PickSessionOptions = {},
+): SessionRow | undefined {
+  let best: { row: SessionRow; busy: boolean; updated: number } | undefined
+
+  for (const row of rows) {
+    const analysis = analyze(row, now, idleAfterMs)
+    if (
+      !best ||
+      (analysis.busy && !best.busy) ||
+      (analysis.busy === best.busy && analysis.updated > best.updated)
+    ) {
+      best = { row, busy: analysis.busy, updated: analysis.updated }
+    }
+  }
+
+  if (!best) return undefined
+
+  const incumbent = options.incumbent
+    ? rows.find((row) => row.session_id === options.incumbent)
+    : undefined
+  if (!incumbent) return best.row
+
+  const current = analyze(incumbent, now, idleAfterMs)
+  const margin = options.switchMarginMs ?? DEFAULT_SWITCH_MARGIN_MS
+
+  // Keep the current session unless the challenger is in a different state or
+  // has been active for a while longer. Prevents millisecond-level flapping
+  // between two sessions that are both working.
+  if (current.busy && !best.busy) return incumbent
+  if (current.busy === best.busy && best.updated - current.updated < margin) {
+    return incumbent
+  }
+
+  return best.row
+}
+
+interface Analysis {
+  snapshot: ActivitySnapshot
+  busy: boolean
+  updated: number
+}
+
+function analyze(row: SessionRow, now: number, idleAfterMs: number): Analysis {
   const message = parseJson<MessageData>(row.message)
   const updated = numberOrUndefined(row.time_updated) ?? 0
   const fresh = updated > 0 && now - updated <= idleAfterMs
@@ -112,13 +159,17 @@ export function snapshotFromRow(
   const output = numberOrUndefined(row.tokens_output)
 
   return {
-    status: busy ? "busy" : "idle",
-    project: row.directory ? basename(row.directory) : undefined,
-    model: formatModelName(model),
-    agent: row.agent ?? message?.agent ?? undefined,
-    cost: numberOrUndefined(row.cost),
-    tokens: input !== undefined && output !== undefined ? { input, output } : undefined,
-    startedAt: busy ? message?.time?.created : undefined,
+    busy,
+    updated,
+    snapshot: {
+      status: busy ? "busy" : "idle",
+      project: row.directory ? basename(row.directory) : undefined,
+      model: formatModelName(model),
+      agent: row.agent ?? message?.agent ?? undefined,
+      cost: numberOrUndefined(row.cost),
+      tokens: input !== undefined && output !== undefined ? { input, output } : undefined,
+      startedAt: busy ? message?.time?.created : undefined,
+    },
   }
 }
 
@@ -130,45 +181,10 @@ export function formatModelName(id: string | undefined): string | undefined {
   return parts.map(formatPart).join(" ")
 }
 
-/**
- * Run a loop on the host that prints one JSON array per interval. `sqlite3` is
- * preferred; `python3` is the fallback because minimal servers often have one
- * but not the other.
- */
-export function buildRemoteScript(
-  dbPath: string,
-  intervalSeconds: number,
-  sql: string = SESSION_QUERY,
-): string {
-  const seconds = Math.max(1, Math.round(intervalSeconds))
-
-  return `db=${quoteRemotePath(dbPath)}
-interval=${seconds}
-sql=${shellQuote(sql)}
-
-if command -v sqlite3 >/dev/null 2>&1 && sqlite3 :memory: -json 'select 1' >/dev/null 2>&1; then
-  while :; do
-    out=$(sqlite3 -readonly -json "$db" "$sql" 2>/dev/null) || out='[]'
-    printf '%s\\n' "\${out:-[]}"
-    sleep "$interval"
-  done
-elif command -v python3 >/dev/null 2>&1; then
-  while :; do
-    out=$(python3 - "$db" "$sql" <<'PY' 2>/dev/null
-import json, sqlite3, sys
-con = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
-con.row_factory = sqlite3.Row
-print(json.dumps([dict(row) for row in con.execute(sys.argv[2])]))
-PY
-) || out='[]'
-    printf '%s\\n' "\${out:-[]}"
-    sleep "$interval"
-  done
-else
-  printf 'opencode-discord-status: install sqlite3 or python3 on the host\\n' >&2
-  exit 1
-fi
-`
+export function expandHome(path: string): string {
+  if (path === "~") return homedir()
+  if (path.startsWith("~/")) return join(homedir(), path.slice(2))
+  return path
 }
 
 function formatPart(part: string): string {
@@ -196,8 +212,4 @@ function parseJson<T>(value: unknown): T | undefined {
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
 }

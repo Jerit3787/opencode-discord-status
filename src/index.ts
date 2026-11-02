@@ -1,10 +1,9 @@
 import type { Plugin } from "@opencode/plugin"
 
 import { parseConfig } from "./config.ts"
-import { DiscordRpcClient, type DiscordActivity, type Logger } from "./discord/client.ts"
-import { NullTransport, PresenceHub } from "./hub.ts"
+import { DiscordRpcClient, type Logger } from "./discord/client.ts"
+import { PresenceHub } from "./hub.ts"
 import { PresenceController, type PresenceEvent, type SessionReader } from "./presence.ts"
-import { StateFile } from "./state-file.ts"
 
 type Context = Plugin.Context
 
@@ -89,24 +88,19 @@ export default {
     const logger = createLogger(config.debug)
     const modelNames = await loadModelNames(ctx, logger)
 
-    const { hub, release } = acquireHub(config.clientId, () => {
-      const transport = config.discord
-        ? new DiscordRpcClient({
+    const { hub, release } = acquireHub(
+      config.clientId,
+      () =>
+        new PresenceHub(
+          new DiscordRpcClient({
             clientId: config.clientId,
             reconnect: config.reconnect,
             minUpdateIntervalMs: config.minUpdateIntervalMs,
             logger,
-          })
-        : new NullTransport()
-
-      let mirror: ((activity: DiscordActivity | null) => void) | undefined
-      if (config.stateFile) {
-        const stateFile = new StateFile(config.stateFile, logger)
-        mirror = (activity) => stateFile.write(activity)
-      }
-
-      return new PresenceHub(transport, logger, { mirror })
-    })
+          }),
+          logger,
+        ),
+    )
 
     const participant = hub.join(ctx.location.directory)
 

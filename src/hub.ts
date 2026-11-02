@@ -1,5 +1,5 @@
 import type { PresenceStatus } from "./activity.ts"
-import type { DiscordActivity, Logger } from "./discord/client.ts"
+import type { DiscordActivity, DiscordRpcClient, Logger } from "./discord/client.ts"
 import type { ActivitySink, PublishMeta } from "./presence.ts"
 
 interface Participant {
@@ -32,23 +32,6 @@ export interface PresenceHubOptions {
   /** Reads the current parent pid. Injectable so the orphan watch can be tested. */
   parentPid?: () => number
   orphanCheckIntervalMs?: number
-  /** Called with every winning activity, even when Discord is not published locally. */
-  mirror?: (activity: DiscordActivity | null) => void
-}
-
-/** The subset of the RPC client the hub needs. Swappable for a no-op or relay. */
-export interface HubTransport {
-  start(): Promise<void>
-  setActivity(activity: DiscordActivity | null): Promise<void> | void
-  stop(): Promise<void>
-  destroy(): void
-}
-
-export class NullTransport implements HubTransport {
-  async start(): Promise<void> {}
-  async stop(): Promise<void> {}
-  destroy(): void {}
-  setActivity(): void {}
 }
 
 /**
@@ -62,24 +45,22 @@ export class NullTransport implements HubTransport {
  * of flapping between idle locations.
  */
 export class PresenceHub {
-  readonly #client: HubTransport
+  readonly #client: DiscordRpcClient
   readonly #logger: Logger
   readonly #participants = new Map<string, Participant>()
   readonly #readParentPid: () => number
   readonly #parentPid: number
   readonly #orphanCheckIntervalMs: number
-  readonly #mirror: ((activity: DiscordActivity | null) => void) | undefined
   #winner: string | undefined
   #starting: Promise<void> | undefined
   #orphanTimer: NodeJS.Timeout | undefined
 
-  constructor(client: HubTransport, logger: Logger, options: PresenceHubOptions = {}) {
+  constructor(client: DiscordRpcClient, logger: Logger, options: PresenceHubOptions = {}) {
     this.#client = client
     this.#logger = logger
     this.#readParentPid = options.parentPid ?? (() => process.ppid)
     this.#parentPid = this.#readParentPid()
     this.#orphanCheckIntervalMs = options.orphanCheckIntervalMs ?? ORPHAN_CHECK_INTERVAL_MS
-    this.#mirror = options.mirror
     this.#watchForOrphanedHost()
   }
 
@@ -148,12 +129,6 @@ export class PresenceHub {
     const winner = this.#pick()
     this.#winner = winner
     const activity = winner ? (this.#participants.get(winner)?.activity ?? null) : null
-
-    try {
-      this.#mirror?.(activity)
-    } catch (error) {
-      this.#logger.debug(`Could not mirror presence: ${describe(error)}`)
-    }
 
     try {
       const result = this.#client.setActivity(activity)

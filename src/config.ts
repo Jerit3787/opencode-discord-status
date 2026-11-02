@@ -3,10 +3,6 @@ import type { ActivityConfig } from "./activity.ts"
 export interface PluginConfig extends ActivityConfig {
   clientId: string
   enabled: boolean
-  /** Publish straight to Discord on this machine. Turn off when the host has no Discord. */
-  discord: boolean
-  /** Mirror the rendered card to this file so a bridge can read it over SSH. */
-  stateFile?: string
   buttons: { label: string; url: string }[]
   minUpdateIntervalMs: number
   reconnect: boolean
@@ -53,7 +49,6 @@ export function parseConfig(options: Readonly<Record<string, unknown>>): ConfigR
   const config: PluginConfig = {
     clientId,
     enabled: booleanOr(options.enabled, true),
-    discord: booleanOr(options.discord, true),
     details: stringOr(options.details, "{project}"),
     state: stringOr(options.state, "{model} · {tokens} · {cost}"),
     idleDetails: stringOr(options.idleDetails, "Idle"),
@@ -64,17 +59,6 @@ export function parseConfig(options: Readonly<Record<string, unknown>>): ConfigR
     minUpdateIntervalMs: clampInterval(options.minUpdateIntervalMs),
     reconnect: booleanOr(options.reconnect, true),
     debug: booleanOr(options.debug, false),
-  }
-
-  const stateFile = stringOrUndefined(options.stateFile)
-  if (stateFile) config.stateFile = stateFile
-
-  if (!config.discord && !config.stateFile) {
-    return {
-      ok: false,
-      error:
-        'Nothing to publish: set "discord": true (default) or "stateFile" to a path a bridge can read. On a remote host, use "discord": false with "stateFile".',
-    }
   }
 
   const largeImage = stringOrUndefined(options.largeImage)

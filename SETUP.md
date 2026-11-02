@@ -12,42 +12,79 @@ bottom. If you are an agent working in this repository, the
 - A Discord Application ID. Create one at
   <https://discord.com/developers/applications> → **New Application**, then copy
   the Application ID from **General Information**. No bot token is needed.
-- Node.js 22.18+ only if you want to run the tests, `doctor`, or the bridge.
+- Node.js 22.18+ only if you want to run the tests, `doctor`, or `watch`.
 
 ## Database watcher (simplest)
 
-No plugin entry, no config edit, and nothing to install on a remote host.
+No plugin entry and no config edit.
 
 ```sh
 cd /path/to/opencode-discord-status
 npm run watch -- --client-id 123456789012345678
 ```
 
-For a remote SSH workspace, run it on the machine with Discord and point it at
-the host:
-
-```sh
-npm run watch -- --ssh user@host --client-id 123456789012345678
-```
-
-Options: `--port`, `--identity`, `--ssh-option`, `--interval <ms>`,
-`--idle-after <seconds>`, `--db <path>`, `--debug`.
+Options: `--interval <ms>`, `--idle-after <seconds>`, `--db <path>`,
+`--exit-when-closed`, `--debug`.
 
 Every two seconds it runs a read-only query against
-`~/.local/share/opencode/opencode.db` (or the same path over SSH). It reads
-`session_v2` and the newest `session_message`:
+`~/.local/share/opencode/opencode.db`. It reads `session_v2` and the newest
+`session_message`:
 
 - no `time.completed` and no `finish` → streaming, **busy**
 - `finish: "tool-calls"` → waiting on tools, **busy**
 - any other `finish` → **idle**
 - no writes for `--idle-after` (default 15 minutes) → **idle**
 
-On the host it needs `sqlite3` or `python3`; the remote loop tries both. Most
-macOS and Linux machines already have one of them.
-
 This reads OpenCode's internal schema, so a major upgrade can change it. The
 plugin below uses the event stream and reacts instantly; use it if you prefer
 that surface.
+
+### Run only while OpenCode is open (macOS)
+
+`--exit-when-closed` clears the card and exits when no OpenCode process is
+running. Pair it with `StartInterval` so launchd checks for OpenCode every 15
+seconds instead of keeping a stale process alive.
+
+Create `~/Library/LaunchAgents/dev.opencode.discord-watch.plist`. Replace the
+node path, repo path, and Application ID:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.opencode.discord-watch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/absolute/path/to/opencode-discord-status/scripts/watch.ts</string>
+    <string>--client-id</string>
+    <string>123456789012345678</string>
+    <string>--exit-when-closed</string>
+    <string>--debug</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>15</integer>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/opencode-discord-watch.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/opencode-discord-watch.log</string>
+</dict>
+</plist>
+```
+
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.opencode.discord-watch.plist
+```
+
+Use `command -v node` for the node path. On Linux, run the same command under
+systemd or the equivalent user service manager.
 
 ## Plugin install (optional)
 
@@ -105,113 +142,12 @@ npm run doctor -- 123456789012345678
 Finally, in Discord open **User Settings → Activity Privacy** and enable
 **Display current activity as a status message**.
 
-## Remote SSH hosts (plugin)
-
-When OpenCode runs on an SSH host (for example a server added to the desktop app
-over SSH), the plugin runs there. That machine has no Discord socket, so the
-plugin writes the card to a file and a bridge on your laptop publishes it.
-
-### 1. Copy the plugin to the host
-
-```sh
-rsync -av --exclude node_modules --exclude test --exclude .git \
-  /absolute/path/to/opencode-discord-status \
-  user@host:~/.config/opencode/plugins/
-```
-
-### 2. Configure the host
-
-Edit `~/.config/opencode/opencode.jsonc` on the host. Replace `/home/you` with
-the real home directory:
-
-```jsonc
-{
-  "plugins": [
-    {
-      "package": "/home/you/.config/opencode/plugins/opencode-discord-status",
-      "options": {
-        "clientId": "123456789012345678",
-        "discord": false,
-        "stateFile": "~/.local/state/opencode-discord-status/presence.json"
-      }
-    }
-  ]
-}
-```
-
-Reconnect the SSH workspace, or run `/reload`, so the host loads the plugin.
-
-### 3. Run the bridge on your laptop
-
-```sh
-cd /absolute/path/to/opencode-discord-status
-npm run bridge -- --ssh user@host --client-id 123456789012345678
-```
-
-- `--port 2222` for a non-default SSH port.
-- `--identity ~/.ssh/id_ed25519` when the host is not in `~/.ssh/config`.
-- `--ssh-option ProxyJump=bastion` for anything else `ssh -o` accepts.
-- `--state <path>` if you changed `stateFile` on the host.
-- `--debug` to log the SSH and Discord connections.
-
-The bridge opens one SSH connection, follows the state file, and publishes each
-new card. If the tunnel drops it clears the presence and reconnects with backoff.
-
-Check the host is writing:
-
-```sh
-ssh user@host 'cat ~/.local/state/opencode-discord-status/presence.json'
-```
-
-### 4. Keep it running (macOS)
-
-Create `~/Library/LaunchAgents/dev.opencode.discord-bridge.plist`. Replace the
-node path, plugin path, host, and Application ID:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>dev.opencode.discord-bridge</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/opt/homebrew/bin/node</string>
-    <string>/absolute/path/to/opencode-discord-status/scripts/bridge.ts</string>
-    <string>--ssh</string>
-    <string>user@host</string>
-    <string>--client-id</string>
-    <string>123456789012345678</string>
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>/tmp/opencode-discord-bridge.log</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/opencode-discord-bridge.log</string>
-</dict>
-</plist>
-```
-
-```sh
-launchctl load ~/Library/LaunchAgents/dev.opencode.discord-bridge.plist
-```
-
-Use `command -v node` for the node path. On Linux, run the same command under
-systemd or the equivalent user service manager.
-
 ## Configuration reference
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `clientId` | — | **Required.** Discord Application ID, as a string. |
 | `enabled` | `true` | Disable without removing the entry. |
-| `discord` | `true` | Publish to a local Discord client. Set `false` on a remote host. |
-| `stateFile` | — | Mirror the card to this file for a bridge. |
 | `details` | `{project}` | Top line while working. |
 | `state` | `{model} · {tokens} · {cost}` | Bottom line while working. |
 | `idleDetails` | `Idle` | Top line while idle. |
@@ -240,10 +176,8 @@ plugin retries with backoff.
 message** in Discord's Activity Privacy settings.
 
 **Card stays after quitting** — on macOS, closing the window is not quitting.
-Use ⌘Q. The plugin also clears the card if its host process disappears.
-
-**Remote sessions show nothing** — the host needs `discord: false` **and**
-`stateFile`; the bridge must be running on the laptop.
+Use ⌘Q. The watcher's `--exit-when-closed` clears the card when OpenCode stops;
+the plugin clears it when its host process disappears.
 
 **Presence goes quiet after many restarts** — Discord limits connections per
 application ID. The plugin shares one connection per process; quit OpenCode
@@ -252,10 +186,9 @@ fully once to release stale ones.
 ## Uninstall
 
 Remove the plugin entry from `plugins`, then delete the clone if you no longer
-need it. On a remote host, remove the copied directory and its entry. If you
-installed the LaunchAgent, run:
+need it. If you installed the watcher LaunchAgent, run:
 
 ```sh
-launchctl unload ~/Library/LaunchAgents/dev.opencode.discord-bridge.plist
-rm ~/Library/LaunchAgents/dev.opencode.discord-bridge.plist
+launchctl bootout gui/$(id -u)/dev.opencode.discord-watch
+rm ~/Library/LaunchAgents/dev.opencode.discord-watch.plist
 ```

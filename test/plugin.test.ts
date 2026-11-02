@@ -1,8 +1,5 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 
 import plugin from "../src/index.ts"
 import { FakeDiscord } from "./helpers/fake-discord.ts"
@@ -252,69 +249,3 @@ test("one card follows the project that is actually working", async () => {
   }
 })
 
-test("a remote plugin writes the card to a state file instead of Discord", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opencode-remote-"))
-  const statePath = join(directory, "presence.json")
-  const queue = new EventQueue()
-
-  const ctx = {
-    options: {
-      clientId: "222233334444555566",
-      discord: false,
-      stateFile: statePath,
-      minUpdateIntervalMs: 1_000,
-    },
-    location: { directory: "/work/remote" },
-    model: { list: async () => ({ location: { directory: "/work/remote" }, data: [] }) },
-    session: { get: async () => ({ location: { directory: "/work/remote" } }) },
-    event: {
-      subscribe: (options?: { signal?: AbortSignal }) => queue.iterate(options?.signal),
-    },
-  }
-
-  let cleanup: (() => Promise<void> | void) | void = undefined
-
-  try {
-    cleanup = await plugin.setup(ctx as never)
-
-    queue.push({
-      type: "session.step.started",
-      created: Date.now(),
-      location: { directory: "/work/remote" },
-      data: {
-        sessionID: "remote-1",
-        model: { providerID: "opencode", id: "deepseek" },
-        agent: "build",
-        started: Date.now(),
-      },
-    })
-
-    const activity = await readActivity(
-      statePath,
-      (candidate) => candidate?.details === "remote",
-    )
-    assert.equal(activity?.details, "remote")
-    assert.equal(activity?.state, "deepseek")
-  } finally {
-    queue.close()
-    if (typeof cleanup === "function") await cleanup()
-    await rm(directory, { recursive: true, force: true })
-  }
-})
-
-async function readActivity(
-  path: string,
-  predicate: (activity: { details?: string; state?: string } | null) => boolean,
-): Promise<{ details?: string; state?: string } | null> {
-  const deadline = Date.now() + 3_000
-  while (Date.now() < deadline) {
-    try {
-      const frame = JSON.parse((await readFile(path, "utf8")).trim())
-      if (predicate(frame.activity)) return frame.activity
-    } catch {
-      // The file may not exist yet.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20))
-  }
-  throw new Error(`Timed out waiting for ${path}`)
-}

@@ -14,7 +14,6 @@ test("applies sensible defaults", () => {
   assert.deepEqual(result.config, {
     clientId: "123456789012345678",
     enabled: true,
-    discord: true,
     details: "{project}",
     state: "{model} · {tokens} · {cost}",
     idleDetails: "Idle",
@@ -26,30 +25,6 @@ test("applies sensible defaults", () => {
     reconnect: true,
     debug: false,
   })
-})
-
-test("can run as a state-file publisher for a remote host", () => {
-  const result = parseConfig({
-    ...valid,
-    discord: false,
-    stateFile: "~/.local/state/opencode-discord-status/presence.json",
-  })
-
-  assert.equal(result.ok, true)
-  if (!result.ok) return
-  assert.equal(result.config.discord, false)
-  assert.equal(
-    result.config.stateFile,
-    "~/.local/state/opencode-discord-status/presence.json",
-  )
-})
-
-test("refuses to run when neither Discord nor a state file is enabled", () => {
-  const result = parseConfig({ ...valid, discord: false })
-
-  assert.equal(result.ok, false)
-  if (result.ok) return
-  assert.match(result.error, /stateFile/)
 })
 
 test("requires a client id", () => {

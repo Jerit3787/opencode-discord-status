@@ -13,40 +13,37 @@ DeepSeek V4.1 Flash · 12.3K tokens · $0.0421
 
 It talks to the Discord desktop app over its local IPC socket. There is no bot token, no OAuth, and no network traffic.
 
-Full setup, remote SSH hosts, and troubleshooting: **[SETUP.md](SETUP.md)**. OpenCode agents can load the `setup-opencode-discord-status` skill in `.opencode/skills/`.
+Full setup and troubleshooting: **[SETUP.md](SETUP.md)**. OpenCode agents can load the `setup-opencode-discord-status` skill in `.opencode/skills/`.
 
 ## One command for your agent
 
 Replace the Application ID and run:
 
 ```sh
-opencode run "Set up Discord Rich Presence for OpenCode from https://github.com/Jerit3787/opencode-discord-status using Discord Application ID <YOUR_APPLICATION_ID>. Use the database watcher, not the plugin. Read SETUP.md first. Clone it to ~/.config/opencode/plugins/opencode-discord-status and run 'npm run watch -- --client-id <YOUR_APPLICATION_ID>' on the machine where Discord runs. If this workspace is on a remote SSH host, give me the exact command to run on my laptop with --ssh. Verify the card appears before saying it is done."
+opencode run "Set up Discord Rich Presence for OpenCode from https://github.com/Jerit3787/opencode-discord-status using Discord Application ID <YOUR_APPLICATION_ID>. Use the database watcher, not the plugin. Read SETUP.md first. Clone it to ~/.config/opencode/plugins/opencode-discord-status and run 'npm run watch -- --client-id <YOUR_APPLICATION_ID>' on the machine where Discord runs. Verify the card appears before saying it is done."
 ```
 
 See **[PROMPT.md](PROMPT.md)** for the paste-into-any-agent version.
 
 ## Simplest: watch the database
 
-No plugin entry, no config edit, no remote install.
+No plugin entry and no config edit.
 
 ```sh
 cd /path/to/opencode-discord-status
 npm run watch -- --client-id 123456789012345678
 ```
 
-For a remote SSH workspace, read that host's database instead:
-
-```sh
-npm run watch -- --ssh user@host --client-id 123456789012345678
-```
-
 It polls `~/.local/share/opencode/opencode.db` every two seconds, picks the
-newest session, and derives busy/idle from the last assistant message. On a
-remote host it needs `sqlite3` or `python3`; the loop tries both.
+newest session, and derives busy/idle from the last assistant message. OpenCode
+and Discord must be running on the same machine.
+
+Add `--exit-when-closed` to stop when OpenCode closes: the watcher clears the
+card and exits, so nothing is left behind. That is the mode the LaunchAgent in
+[SETUP.md](SETUP.md) uses.
 
 This reads OpenCode's internal schema, so a major upgrade can change it. The
-plugin below uses the event stream instead and is the better choice if you want
-the card to react instantly.
+plugin below uses the event stream instead and reacts instantly.
 
 ## Quick start (plugin)
 
@@ -78,7 +75,7 @@ In your project's `opencode.json` / `opencode.jsonc`:
 
 Use an absolute path (`"/Users/you/opencode-discord-status"`) if the plugin lives outside the project, or publish the package and use its name. A local path must point at the plugin directory: OpenCode loads its root `index.ts`.
 
-There is no build step and no runtime dependency, so `npm install` is only needed to run the tests, `doctor`, or the bridge.
+There is no build step and no runtime dependency, so `npm install` is only needed to run the tests or `doctor`.
 
 `clientId` must be a string. Discord IDs are larger than JavaScript's safe integer range, so an unquoted number silently loses digits.
 
@@ -122,55 +119,6 @@ Token and cost totals come from OpenCode's own session accounting and refresh
 each time a run finishes, so the numbers on the card track the session rather
 than the whole machine.
 
-## Remote SSH hosts
-
-Discord's IPC socket only exists on the machine where Discord runs. When
-OpenCode runs on a remote host — for example a server added to the desktop app
-over SSH — the plugin there cannot reach your laptop's Discord.
-
-It can still publish the card by writing it to a small state file, which a
-bridge on your Mac reads over SSH.
-
-**1. Copy the plugin to the remote host.** It has no runtime dependencies, so
-no `npm install` is needed:
-
-```sh
-rsync -av --exclude node_modules --exclude test \
-  ./opencode-discord-status user@host:~/.config/opencode/plugins/
-```
-
-**2. On the remote host, load it without Discord and with a state file**
-(replace `/home/you` with the real home directory):
-
-```jsonc
-{
-  "plugins": [
-    {
-      "package": "/home/you/.config/opencode/plugins/opencode-discord-status",
-      "options": {
-        "clientId": "123456789012345678",
-        "discord": false,
-        "stateFile": "~/.local/state/opencode-discord-status/presence.json"
-      }
-    }
-  ]
-}
-```
-
-**3. On your Mac, run the bridge:**
-
-```sh
-npm run bridge -- --ssh user@host --client-id 123456789012345678
-```
-
-Add `--port`, `--identity`, or `--ssh-option ProxyJump=bastion` if your host
-needs them. The bridge opens one SSH connection, follows the state file, and
-publishes each new card. If the tunnel drops it clears the presence and
-reconnects with backoff.
-
-The state file holds only the text Discord would have shown — project, model,
-tokens, cost — never prompts, messages, or code.
-
 ## Configuration
 
 All options live under the plugin's `options` object.
@@ -179,8 +127,6 @@ All options live under the plugin's `options` object.
 | --- | --- | --- |
 | `clientId` | — | **Required.** Discord Application ID, as a string. |
 | `enabled` | `true` | Set to `false` to disable without removing the plugin. |
-| `discord` | `true` | Publish to a Discord client on this machine. Set to `false` on a remote host. |
-| `stateFile` | — | Mirror the card to this file so a bridge can read it over SSH. |
 | `details` | `{project}` | Top line while working. |
 | `state` | `{model} · {tokens} · {cost}` | Bottom line while working. |
 | `idleDetails` | `Idle` | Top line while idle. |
@@ -258,6 +204,7 @@ Flatpak, Snap, Vesktop, and multiple Discord clients are probed automatically on
 
 ## How it works
 
+- The recommended path watches OpenCode's SQLite database: `session_v2` supplies the session totals, and the newest `session_message` supplies the busy/idle signal.
 - OpenCode V2 plugin hooks load the plugin and expose the event stream.
 - The card is driven by `session.step.started` / `session.step.ended` (which carry the model, agent, tokens, and cost) plus `session.usage.updated`. `session.step.ended` reports `finish: "tool-calls"` while a turn continues, and any other finish ends it. The older `session.execution.*` and `session.status` events are still honoured.
 - Concurrent sessions are ranked by recent activity; the newest busy session wins.
