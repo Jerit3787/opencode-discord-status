@@ -15,6 +15,16 @@ It talks to the Discord desktop app over its local IPC socket. There is no bot t
 
 Full setup, remote SSH hosts, and troubleshooting: **[SETUP.md](SETUP.md)**. OpenCode agents can load the `setup-opencode-discord-status` skill in `.opencode/skills/`.
 
+## One command for your agent
+
+Replace the Application ID and run:
+
+```sh
+opencode run "Set up Discord Rich Presence for OpenCode from https://github.com/Jerit3787/opencode-discord-status using Discord Application ID <YOUR_APPLICATION_ID>. Read SETUP.md and .opencode/skills/setup-opencode-discord-status/SKILL.md first. Clone it to ~/.config/opencode/plugins/opencode-discord-status and install it for this machine. If this workspace is on a remote SSH host, configure discord:false and stateFile here, then give me the exact npm run bridge command to run on the machine with Discord. Preserve existing config entries and verify with 'opencode plugin list' and 'npm run doctor' before saying it is done."
+```
+
+See **[PROMPT.md](PROMPT.md)** for the paste-into-any-agent version.
+
 ## Quick start
 
 ### 1. Create a Discord application
