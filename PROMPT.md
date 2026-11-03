@@ -3,7 +3,7 @@
 Copy this and run it:
 
 ```sh
-opencode run "Set up Discord Rich Presence for OpenCode from https://github.com/Jerit3787/opencode-discord-status. Read SETUP.md first. Clone it to ~/opencode-discord-status, build with 'go build -trimpath -o bin/opencode-discord-status .', then run './bin/opencode-discord-status' on the machine where Discord runs. Verify with '-once' and '--doctor'. On macOS, add --exit-when-closed and a launchd StartInterval job so it only runs while OpenCode is open."
+opencode run "Set up Discord Rich Presence for OpenCode from https://github.com/Jerit3787/opencode-discord-status. Read SETUP.md first. Clone it to ~/opencode-discord-status, build with 'go build -trimpath -o bin/opencode-discord-status .', then add the repo's autostart plugin to the global plugins list and start OpenCode. Verify with '-once' and '--doctor'."
 ```
 
 No Discord Application ID is needed: the binary ships with a shared one.
@@ -15,7 +15,6 @@ The same text works in any coding agent:
 > Set up Discord Rich Presence for OpenCode from
 > https://github.com/Jerit3787/opencode-discord-status. Read `SETUP.md` first.
 > Clone it to `~/opencode-discord-status`, build with
-> `go build -trimpath -o bin/opencode-discord-status .`, then run
-> `./bin/opencode-discord-status` on the machine where Discord runs. Verify with
-> `-once` and `--doctor`. On macOS, add `--exit-when-closed` and a launchd
-> `StartInterval` job so it only runs while OpenCode is open.
+> `go build -trimpath -o bin/opencode-discord-status .`, then add the repo's
+> `autostart` plugin to the global `plugins` list and start OpenCode. Verify with
+> `-once` and `--doctor`.

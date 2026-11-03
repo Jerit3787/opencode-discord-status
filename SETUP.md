@@ -62,55 +62,30 @@ Then check the Discord path independently:
 Finally, in Discord open **User Settings → Activity Privacy** and enable
 **Display current activity as a status message**.
 
-## Run only while OpenCode is open (macOS)
+## Run only while OpenCode is open
 
-`--exit-when-closed` clears the card and exits when no OpenCode process is
-running. The desktop app's `opencode-cli serve --service` child is ignored
-because it can outlive the app; on macOS, use ⌘Q to quit (closing the window
-does not quit the app). Pair it with `StartInterval` so launchd checks for
-OpenCode every 15 seconds instead of keeping a stale process alive.
+Add the `autostart` plugin to the global `plugins` array:
 
-Create `~/Library/LaunchAgents/dev.opencode.discord-watch.plist`. Replace the
-binary path:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>dev.opencode.discord-watch</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/absolute/path/to/opencode-discord-status/bin/opencode-discord-status</string>
-    <string>--exit-when-closed</string>
-  </array>
-  <key>WorkingDirectory</key>
-  <string>/absolute/path/to/opencode-discord-status</string>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>StartInterval</key>
-  <integer>15</integer>
-  <key>ThrottleInterval</key>
-  <integer>10</integer>
-  <key>StandardOutPath</key>
-  <string>/Users/you/Library/Logs/opencode-discord-watch.log</string>
-  <key>StandardErrorPath</key>
-  <string>/Users/you/Library/Logs/opencode-discord-watch.log</string>
-</dict>
-</plist>
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "/absolute/path/to/opencode-discord-status/autostart",
+      "options": {}
+    }
+  ]
+}
 ```
 
-```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.opencode.discord-watch.plist
-```
+OpenCode starts `bin/opencode-discord-status --exit-when-closed` when it starts
+and kills it when it exits. There is no launchd job and no
+`opencode-discord-status` process while OpenCode is closed. The plugin checks
+every two seconds and restarts the watcher if it crashes.
 
-No `KeepAlive`: when OpenCode closes, the watcher clears the card and exits;
-launchd starts it again within 15 seconds of OpenCode reopening. Replace
-`/Users/you` with your home directory. Add `--debug` while troubleshooting; the
-log then grows with each card change. On Linux, use the same pattern under
-systemd or your user service manager.
+The watcher logs to `watch.log` in the repo root.
+
+The desktop app's `opencode-cli serve --service` child is ignored because it can
+outlive the app. On macOS, closing the window is not quitting; use ⌘Q.
 
 ## Flags
 
@@ -138,8 +113,9 @@ watcher retries every five seconds.
 **Card is set but not visible** — enable **Display current activity as a status
 message** in Discord's Activity Privacy settings.
 
-**Card stays after quitting** — with `--exit-when-closed`, it clears within five
-seconds. On macOS, closing the window is not quitting; use ⌘Q.
+**Card stays after quitting** — the autostart plugin kills the watcher within two
+seconds. If it stays, OpenCode is still running: closing the window is not
+quitting on macOS; use ⌘Q.
 
 **Discord restarted** — the watcher reconnects on the next poll and republishes
 the current card, even if the text has not changed.
@@ -154,23 +130,25 @@ pin the previous binary until the schema settles.
 
 ## Upgrading from the TypeScript version
 
-If you used the old plugin or the Node watcher:
+If you used the old plugin, Node watcher, or launchd job:
 
-1. Remove the `opencode-discord-status` entry from `plugins` in
-   `~/.config/opencode/opencode.jsonc`. The repo no longer contains `index.ts`,
-   so an old entry will fail to load.
-2. Replace the old launchd job:
-   `launchctl bootout gui/$(id -u)/dev.opencode.discord-watch`, then recreate the
-   plist from the LaunchAgent section above with the Go binary.
+1. Remove the old `opencode-discord-status` entry from `plugins`. The repo no
+   longer contains `index.ts`, so an old entry will fail to load.
+2. If you created the old LaunchAgent:
+   `launchctl bootout gui/$(id -u)/dev.opencode.discord-watch` and
+   `rm -f ~/Library/LaunchAgents/dev.opencode.discord-watch.plist`.
 3. Delete `node_modules` from the clone; it is no longer used.
 4. `go build -trimpath -o bin/opencode-discord-status .`
-5. `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.opencode.discord-watch.plist`
+5. Add the `autostart` plugin entry from the section above.
 
 ## Uninstall
 
+Remove the `autostart` entry from `plugins`. If you previously installed the
+launchd job, also run:
+
 ```sh
 launchctl bootout gui/$(id -u)/dev.opencode.discord-watch
-rm ~/Library/LaunchAgents/dev.opencode.discord-watch.plist
+rm -f ~/Library/LaunchAgents/dev.opencode.discord-watch.plist
 ```
 
 Delete the clone if you no longer need it.

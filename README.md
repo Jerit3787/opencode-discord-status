@@ -55,17 +55,24 @@ as a status message**.
 
 ## Run only while OpenCode is open
 
-`--exit-when-closed` clears the card and exits when no OpenCode process is
-running. Pair it with a launchd job using `StartInterval`, not `KeepAlive`, so
-launchd checks for OpenCode every 15 seconds:
+Add the `autostart` plugin to the global `plugins` array:
 
-```sh
-./bin/opencode-discord-status --exit-when-closed
+```jsonc
+{
+  "package": "/absolute/path/to/opencode-discord-status/autostart",
+  "options": {}
+}
 ```
 
-The desktop app's `opencode-cli serve --service` child is ignored because it can
-outlive the app. On macOS, closing the window is not quitting — use ⌘Q, and the
-card clears within a few seconds.
+OpenCode starts the watcher when it starts and kills it when it exits. There is
+no launchd job, and no `opencode-discord-status` process exists while OpenCode
+is closed. The plugin checks every two seconds and restarts the watcher if it
+crashes.
+
+The watcher is started with `--exit-when-closed`, so it also clears the card and
+exits if it is ever orphaned. The desktop app's `opencode-cli serve --service`
+child is ignored because it can outlive the app; on macOS, closing the window is
+not quitting — use ⌘Q.
 
 See [SETUP.md](SETUP.md) for the LaunchAgent.
 

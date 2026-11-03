@@ -21,6 +21,7 @@ Go 1.26+ is required.
 - `main.go` — flags, poll loop, Discord connection, card text.
 - `opencode.go` — SQL, row parsing, busy/idle, session pick, formatting.
 - `lifecycle.go` — detect whether OpenCode is running.
+- `autostart/index.ts` — OpenCode plugin that starts and stops the watcher.
 - `discord/` — minimal Discord IPC client, adapted from `cc-discord-presence`.
 - `discord/conn_unix.go` / `conn_windows.go` — platform sockets.
 
@@ -32,9 +33,10 @@ Go 1.26+ is required.
   `finish: "tool-calls"`. Any other `finish` is idle.
 - **Selection:** busy beats idle, then most recently written. Keep the incumbent
   unless another session is at least 10 seconds newer.
-- **Lifecycle:** `--exit-when-closed` clears the card and exits when no OpenCode
-  process is running. Ignore `opencode-cli serve --service`; it can outlive the
-  app after quitting. The LaunchAgent uses `StartInterval`, never `KeepAlive`.
+- **Lifecycle:** the `autostart` plugin supervises
+  `bin/opencode-discord-status --exit-when-closed`; it starts it with OpenCode
+  and kills it on exit. Ignore `opencode-cli serve --service`; it can outlive
+  the app. Do not reintroduce a launchd job.
 - **Elapsed timer:** start it at the latest user message, not the newest
   assistant step. Assistant messages are per-step, so using them resets the
   timer constantly.

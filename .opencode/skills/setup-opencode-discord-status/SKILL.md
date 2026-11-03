@@ -46,11 +46,19 @@ OpenCode's local SQLite database; there is no plugin and no network.
 
 ## Run only while OpenCode is open
 
-Add `--exit-when-closed`: it clears the card and exits when no OpenCode process
-is running. The app's `opencode-cli serve --service` child is ignored because it
-can outlive the app; on macOS, quit with ⌘Q (closing the window is not quitting).
-Use a launchd job with `StartInterval` (not `KeepAlive`) so it starts again
-within 15 seconds of OpenCode reopening. The full plist is in `SETUP.md`.
+Add the `autostart` plugin to `plugins`:
+
+```jsonc
+{
+  "package": "/absolute/path/to/opencode-discord-status/autostart",
+  "options": {}
+}
+```
+
+It starts `bin/opencode-discord-status --exit-when-closed` when OpenCode starts,
+kills it on exit, and restarts it if it crashes. No launchd job is used. The
+app's `opencode-cli serve --service` child is ignored because it can outlive the
+app; on macOS, quit with ⌘Q (closing the window is not quitting).
 
 ## What it reads
 
@@ -71,8 +79,8 @@ The schema is internal. If a major OpenCode upgrade changes it, update
 | Mistake | Fix |
 | --- | --- |
 | Running the binary somewhere without Discord | Run it on the machine with the Discord desktop app. |
-| Expecting it to keep running after OpenCode closes | Add `--exit-when-closed`; without it the watcher keeps polling. |
-| Using `KeepAlive` in launchd | Use `StartInterval: 15` so it checks for OpenCode. |
+| Expecting it to keep running after OpenCode closes | The `autostart` plugin kills it on exit; no launchd job is needed. |
+| Using a launchd job at all | Use the `autostart` plugin; it starts and stops with OpenCode. |
 | Database path differs | Pass `--db /path/to/opencode.db`. |
 | Card is set but invisible | Enable **Display current activity as a status message**. |
 | Card stays after quitting on macOS | Closing the window is not quitting; use ⌘Q. The background service is ignored. |
