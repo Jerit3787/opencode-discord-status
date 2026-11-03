@@ -63,6 +63,10 @@ launchd checks for OpenCode every 15 seconds:
 ./bin/opencode-discord-status --exit-when-closed
 ```
 
+The desktop app's `opencode-cli serve --service` child is ignored because it can
+outlive the app. On macOS, closing the window is not quitting — use ⌘Q, and the
+card clears within a few seconds.
+
 See [SETUP.md](SETUP.md) for the LaunchAgent.
 
 ## What it reads

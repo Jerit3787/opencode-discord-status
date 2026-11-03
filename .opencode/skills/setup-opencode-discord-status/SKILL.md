@@ -47,9 +47,10 @@ OpenCode's local SQLite database; there is no plugin and no network.
 ## Run only while OpenCode is open
 
 Add `--exit-when-closed`: it clears the card and exits when no OpenCode process
-is running. Use a launchd job with `StartInterval` (not `KeepAlive`) so it
-starts again within 15 seconds of OpenCode reopening. The full plist is in
-`SETUP.md`.
+is running. The app's `opencode-cli serve --service` child is ignored because it
+can outlive the app; on macOS, quit with ⌘Q (closing the window is not quitting).
+Use a launchd job with `StartInterval` (not `KeepAlive`) so it starts again
+within 15 seconds of OpenCode reopening. The full plist is in `SETUP.md`.
 
 ## What it reads
 
@@ -74,7 +75,7 @@ The schema is internal. If a major OpenCode upgrade changes it, update
 | Using `KeepAlive` in launchd | Use `StartInterval: 15` so it checks for OpenCode. |
 | Database path differs | Pass `--db /path/to/opencode.db`. |
 | Card is set but invisible | Enable **Display current activity as a status message**. |
-| Card stays after quitting on macOS | Closing the window is not quitting; use ⌘Q. |
+| Card stays after quitting on macOS | Closing the window is not quitting; use ⌘Q. The background service is ignored. |
 
 ## Verify the result
 

@@ -33,7 +33,8 @@ Go 1.26+ is required.
 - **Selection:** busy beats idle, then most recently written. Keep the incumbent
   unless another session is at least 10 seconds newer.
 - **Lifecycle:** `--exit-when-closed` clears the card and exits when no OpenCode
-  process is running. The LaunchAgent uses `StartInterval`, never `KeepAlive`.
+  process is running. Ignore `opencode-cli serve --service`; it can outlive the
+  app after quitting. The LaunchAgent uses `StartInterval`, never `KeepAlive`.
 - **Elapsed timer:** start it at the latest user message, not the newest
   assistant step. Assistant messages are per-step, so using them resets the
   timer constantly.

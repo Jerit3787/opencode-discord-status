@@ -65,8 +65,10 @@ Finally, in Discord open **User Settings → Activity Privacy** and enable
 ## Run only while OpenCode is open (macOS)
 
 `--exit-when-closed` clears the card and exits when no OpenCode process is
-running. Pair it with `StartInterval` so launchd checks for OpenCode every 15
-seconds instead of keeping a stale process alive.
+running. The desktop app's `opencode-cli serve --service` child is ignored
+because it can outlive the app; on macOS, use ⌘Q to quit (closing the window
+does not quit the app). Pair it with `StartInterval` so launchd checks for
+OpenCode every 15 seconds instead of keeping a stale process alive.
 
 Create `~/Library/LaunchAgents/dev.opencode.discord-watch.plist`. Replace the
 binary path:

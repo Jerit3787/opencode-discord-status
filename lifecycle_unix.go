@@ -4,12 +4,19 @@ package main
 
 import "os/exec"
 
-// openCodeRunning reports whether the app or CLI is running. If `ps` fails,
-// assume it is running: better to keep the card than to hide it silently.
+// openCodeRunning reports whether the app or a normal CLI/TUI is running.
+// The background `serve --service` child is ignored because it can outlive the
+// app. If `ps` fails, assume OpenCode is running so the card is not hidden.
 func openCodeRunning() bool {
-	output, err := exec.Command("ps", "-Ao", "comm=").Output()
+	commOutput, err := exec.Command("ps", "-Ao", "comm=").Output()
 	if err != nil {
 		return true
 	}
-	return hasOpenCodeProcess(string(output))
+
+	argsOutput, err := exec.Command("ps", "-Ao", "args=").Output()
+	if err != nil {
+		return true
+	}
+
+	return hasOpenCodeCommand(string(commOutput), string(argsOutput))
 }
