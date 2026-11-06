@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Jerit3787/opencode-discord-status/actions/workflows/ci.yml/badge.svg)](https://github.com/Jerit3787/opencode-discord-status/actions/workflows/ci.yml)
 
-![opencode-discord-status](assets/preview.png)
+![opencode-discord-status](assets/preview.jpg)
 
 Discord Rich Presence for [OpenCode](https://opencode.ai). Your Discord profile
 shows the project you are in, the model doing the work, the token count, and the
