@@ -76,6 +76,9 @@ exits if it is ever orphaned. The desktop app's `opencode-cli serve --service`
 child is ignored because it can outlive the app; on macOS, closing the window is
 not quitting — use ⌘Q.
 
+To disable it temporarily, set `"options": { "enabled": false }`; set it back to
+`true` or remove the option to re-enable.
+
 See [SETUP.md](SETUP.md) for the LaunchAgent.
 
 ## What it reads

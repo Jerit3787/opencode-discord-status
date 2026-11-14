@@ -17,6 +17,15 @@ interface Entry {
 
 type Global = Record<symbol, unknown>
 
+function stopSupervisor(globals: Global): void {
+  const entry = globals[KEY] as Entry | undefined
+  if (!entry) return
+
+  if (entry.timer) clearInterval(entry.timer)
+  entry.child?.kill("SIGTERM")
+  delete globals[KEY]
+}
+
 // The desktop app's `opencode-cli serve --service` child outlives the app, so
 // it is not evidence that OpenCode is open. A normal CLI/TUI process is.
 function isOpenCodeRunning(): boolean {
@@ -91,8 +100,14 @@ function supervise(entry: Entry): void {
 export default {
   id: "opencode-discord-status-autostart",
 
-  async setup() {
+  async setup(ctx: { options?: { enabled?: boolean } }) {
     const globals = globalThis as Global
+
+    if (ctx?.options?.enabled === false) {
+      stopSupervisor(globals)
+      return
+    }
+
     let entry = globals[KEY] as Entry | undefined
 
     if (!entry) {

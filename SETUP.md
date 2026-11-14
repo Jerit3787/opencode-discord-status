@@ -87,6 +87,15 @@ The watcher logs to `watch.log` in the repo root.
 The desktop app's `opencode-cli serve --service` child is ignored because it can
 outlive the app. On macOS, closing the window is not quitting; use ⌘Q.
 
+To disable the presence without removing the entry, set:
+
+```jsonc
+"options": { "enabled": false }
+```
+
+Set it back to `true` (or remove the option) to turn it on again. OpenCode
+reloads the plugin automatically.
+
 ## Flags
 
 | Flag | Default | Description |
