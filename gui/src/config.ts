@@ -7,6 +7,7 @@ import { type Config, StatusSchema, type Status } from "./contract"
 export const DEFAULT_CONFIG: Config = {
   version: 1,
   enabled: true,
+  autostart: true,
   showProject: true,
   showModel: true,
   showTokens: true,
@@ -17,6 +18,7 @@ export const DEFAULT_CONFIG: Config = {
 
 const BOOLEAN_FIELDS = [
   "enabled",
+  "autostart",
   "showProject",
   "showModel",
   "showTokens",

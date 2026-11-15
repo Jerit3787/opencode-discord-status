@@ -238,7 +238,24 @@ export function DiscordPresenceSettings(props: { state: SettingsState; ctx: Cont
               disabled={controlsDisabled()}
               onChange={(checked) => set({ enabled: checked })}
             />
+            <ToggleRow
+              ui={ui}
+              title="Start with OpenCode"
+              description="Launch the daemon automatically. Turning this off stops the supervised daemon."
+              checked={config().autostart}
+              disabled={controlsDisabled()}
+              onChange={(checked) => set({ autostart: checked })}
+            />
           </div>
+
+          <Show when={!config().autostart}>
+            <div class="ods-notice">
+              <span>
+                Autostart is off. The daemon will not start with OpenCode; turn this on here to
+                start it now.
+              </span>
+            </div>
+          </Show>
 
           <div class="ods-card">
             <div class="ods-card-head">

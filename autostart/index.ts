@@ -1,5 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process"
-import { closeSync, openSync } from "node:fs"
+import { closeSync, openSync, readFileSync } from "node:fs"
+import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -54,6 +55,30 @@ function isOpenCodeRunning(): boolean {
   }
 }
 
+// Mirrors os.UserConfigDir()/opencode-discord-status in the daemon.
+function configDir(): string {
+  if (process.platform === "win32") {
+    return join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "opencode-discord-status")
+  }
+  if (process.platform === "darwin") {
+    return join(homedir(), "Library", "Application Support", "opencode-discord-status")
+  }
+  return join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "opencode-discord-status")
+}
+
+// The settings page writes this switch. A missing or malformed config means
+// the historical default: start with OpenCode.
+function autoStartEnabled(): boolean {
+  try {
+    const config = JSON.parse(readFileSync(join(configDir(), "config.json"), "utf8")) as {
+      autostart?: unknown
+    }
+    return config.autostart !== false
+  } catch {
+    return true
+  }
+}
+
 function startWatcher(entry: Entry): void {
   let log: number | undefined
   try {
@@ -78,23 +103,28 @@ function startWatcher(entry: Entry): void {
   entry.child = child
 }
 
+function childAlive(entry: Entry): boolean {
+  return entry.child !== undefined && entry.child.exitCode === null && !entry.child.killed
+}
+
+function stopChild(entry: Entry): void {
+  if (!entry.child) return
+  entry.child.kill("SIGTERM")
+  entry.child = undefined
+}
+
 function supervise(entry: Entry): void {
-  entry.timer = setInterval(() => {
-    if (isOpenCodeRunning()) {
-      if (!entry.child || entry.child.exitCode !== null || entry.child.killed) {
-        startWatcher(entry)
-      }
+  const tick = () => {
+    if (!autoStartEnabled() || !isOpenCodeRunning()) {
+      stopChild(entry)
       return
     }
+    if (!childAlive(entry)) startWatcher(entry)
+  }
 
-    if (entry.child) {
-      entry.child.kill("SIGTERM")
-      entry.child = undefined
-    }
-  }, CHECK_INTERVAL_MS)
-
+  entry.timer = setInterval(tick, CHECK_INTERVAL_MS)
   entry.timer.unref?.()
-  if (isOpenCodeRunning()) startWatcher(entry)
+  tick()
 }
 
 export default {
@@ -113,11 +143,17 @@ export default {
     if (!entry) {
       entry = { refs: 0 }
       globals[KEY] = entry
-      supervise(entry)
     }
 
     entry.refs += 1
+
+    // Re-arm on plugin reload so supervision changes take effect without an
+    // OpenCode restart. An existing child is kept, not duplicated.
     const current = entry
+    if (current.timer) clearInterval(current.timer)
+    current.timer = undefined
+    supervise(current)
+
     let released = false
 
     return async () => {

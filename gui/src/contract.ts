@@ -4,6 +4,7 @@ import { Ipc } from "@opencode/plugin/gui"
 export const ConfigSchema = Schema.Struct({
   version: Schema.Literal(1),
   enabled: Schema.Boolean,
+  autostart: Schema.Boolean,
   showProject: Schema.Boolean,
   showModel: Schema.Boolean,
   showTokens: Schema.Boolean,

@@ -19,6 +19,7 @@ const daemonVersion = "1.1.0"
 type Settings struct {
 	Version     int  `json:"version"`
 	Enabled     bool `json:"enabled"`
+	Autostart   bool `json:"autostart"`
 	ShowProject bool `json:"showProject"`
 	ShowModel   bool `json:"showModel"`
 	ShowTokens  bool `json:"showTokens"`
@@ -31,6 +32,7 @@ func defaultSettings() Settings {
 	return Settings{
 		Version:     settingsVersion,
 		Enabled:     true,
+		Autostart:   true,
 		ShowProject: true,
 		ShowModel:   true,
 		ShowTokens:  true,
@@ -84,6 +86,7 @@ func loadSettings(path string) (Settings, error) {
 	}
 
 	readBool("enabled", &settings.Enabled)
+	readBool("autostart", &settings.Autostart)
 	readBool("showProject", &settings.ShowProject)
 	readBool("showModel", &settings.ShowModel)
 	readBool("showTokens", &settings.ShowTokens)

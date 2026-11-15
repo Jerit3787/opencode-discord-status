@@ -23,9 +23,10 @@ describe("parseConfig", () => {
 
   it("keeps valid fields and reports wrong-typed ones", () => {
     const result = parseConfig(
-      JSON.stringify({ enabled: false, showCost: false, showModel: "yes" }),
+      JSON.stringify({ enabled: false, autostart: false, showCost: false, showModel: "yes" }),
     )
     expect(result.config.enabled).toBe(false)
+    expect(result.config.autostart).toBe(false)
     expect(result.config.showCost).toBe(false)
     expect(result.config.showModel).toBe(true)
     expect(result.error).toContain("showModel")

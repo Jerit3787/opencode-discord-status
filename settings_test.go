@@ -19,14 +19,14 @@ func TestLoadSettingsDefaultsMissing(t *testing.T) {
 
 func TestLoadSettingsKeepsValidFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"enabled":false,"showCost":false,"showModel":"yes"}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"enabled":false,"autostart":false,"showCost":false,"showModel":"yes"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	got, err := loadSettings(path)
 	if err == nil {
 		t.Fatal("want error for wrong-typed showModel")
 	}
-	if got.Enabled || got.ShowCost {
+	if got.Enabled || got.Autostart || got.ShowCost {
 		t.Fatal("valid false fields were lost")
 	}
 	if !got.ShowProject || !got.ShowModel || !got.ShowTokens || !got.ShowElapsed {
