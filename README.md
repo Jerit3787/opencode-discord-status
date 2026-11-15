@@ -79,6 +79,48 @@ not quitting — use ⌘Q.
 To disable it temporarily, set `"options": { "enabled": false }`; set it back to
 `true` or remove the option to re-enable.
 
+## Settings page
+
+The repo also ships an OpenCode Desktop GUI plugin that adds **Settings →
+Discord Presence**. It enables/disables the card and chooses which fields appear
+without editing JSON.
+
+```sh
+cd gui
+npm install
+npm run build
+```
+
+Add the absolute `gui` directory to `plugins`, next to `autostart`:
+
+```jsonc
+{
+  "plugins": [
+    { "package": "/absolute/path/to/opencode-discord-status/autostart", "options": {} },
+    "/absolute/path/to/opencode-discord-status/gui"
+  ]
+}
+```
+
+OpenCode reloads the plugin after the config change. The page includes status,
+master switch, field switches, private mode, a live preview, and the config path.
+
+Settings live in the platform config directory:
+
+| Platform | File |
+| --- | --- |
+| macOS | `~/Library/Application Support/opencode-discord-status/config.json` |
+| Linux | `$XDG_CONFIG_HOME/opencode-discord-status/config.json` (or `~/.config/...`) |
+| Windows | `%APPDATA%\opencode-discord-status\config.json` |
+
+The daemon writes `status.json` beside it. Both are written atomically with mode
+`0600`. The daemon reloads the config on its next poll, so toggles apply live
+without restarting OpenCode or the watcher. Turning presence off clears the
+Discord card immediately but leaves the daemon running so turning it back on
+needs no restart. Private mode hides the project from the card and the preview.
+
+See [gui/README.md](gui/README.md) for development and the full field list.
+
 See [SETUP.md](SETUP.md) for the LaunchAgent.
 
 ## What it reads

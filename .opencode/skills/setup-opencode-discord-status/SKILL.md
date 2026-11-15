@@ -6,7 +6,8 @@ description: Use when installing, configuring, or troubleshooting opencode-disco
 # Set up opencode-discord-status
 
 Show OpenCode sessions on Discord: project, model, tokens, and cost. It reads
-OpenCode's local SQLite database; there is no plugin and no network.
+OpenCode's local SQLite database. The daemon needs no plugin; an optional GUI
+plugin adds a Settings page. There is no network access.
 
 ## Before you start
 
@@ -59,6 +60,32 @@ It starts `bin/opencode-discord-status --exit-when-closed` when OpenCode starts,
 kills it on exit, and restarts it if it crashes. No launchd job is used. The
 app's `opencode-cli serve --service` child is ignored because it can outlive the
 app; on macOS, quit with ⌘Q (closing the window is not quitting).
+
+## Optional settings page
+
+The GUI plugin adds **Settings → Discord Presence** to OpenCode Desktop:
+
+```sh
+cd gui
+npm install
+npm run build
+```
+
+Add the absolute `gui` directory to `plugins`, next to `autostart`:
+
+```jsonc
+{
+  "plugins": [
+    { "package": "/absolute/path/to/opencode-discord-status/autostart", "options": {} },
+    "/absolute/path/to/opencode-discord-status/gui"
+  ]
+}
+```
+
+It controls enable/disable, project, model, tokens, cost, elapsed time, and
+private mode. Settings and status live under the platform config directory
+(`opencode-discord-status/config.json` and `status.json`); changes apply on the
+daemon's next poll.
 
 ## What it reads
 

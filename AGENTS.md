@@ -12,16 +12,23 @@ go build -trimpath -o bin/opencode-discord-status .
 ./bin/opencode-discord-status -once
 ./bin/opencode-discord-status --doctor
 ./scripts/build.sh          # cross-compile every platform into bin/
+
+cd gui && npm test
+cd gui && npm run typecheck && npm run build
 ```
 
-Go 1.26+ is required.
+Go 1.26+ is required. The GUI plugin needs Node and the dependencies in
+`gui/package.json`.
 
 ## Architecture
 
-- `main.go` — flags, poll loop, Discord connection, card text.
+- `main.go` — flags, poll loop, Discord connection, settings reload, card text.
+- `settings.go` — config schema, defaults, tolerant loader, config dir.
+- `status.go` — status snapshot and atomic writer for the GUI.
 - `opencode.go` — SQL, row parsing, busy/idle, session pick, formatting.
 - `lifecycle.go` — detect whether OpenCode is running.
 - `autostart/index.ts` — OpenCode plugin that starts and stops the watcher.
+- `gui/` — OpenCode Desktop GUI plugin: settings page, IPC bridge, preview.
 - `discord/` — minimal Discord IPC client, adapted from `cc-discord-presence`.
 - `discord/conn_unix.go` / `conn_windows.go` — platform sockets.
 
@@ -48,7 +55,21 @@ Go 1.26+ is required.
 - **Discord rate limits.** Token/cost churn is throttled to one update per four
   seconds; busy/idle and project changes bypass the throttle.
 - **Privacy:** only the project folder name, model, tokens, and cost leave the
-  machine. Never prompts, messages, or code.
+  machine. Never prompts, messages, or code. Private mode hides the project from
+  both Discord and the settings preview.
+- **Config:** `config.json` lives under the platform config dir
+  (`os.UserConfigDir()/opencode-discord-status`). The daemon reloads on mtime
+  change, applies valid fields, and reports partial parse errors without
+  discarding the rest. Missing files mean the defaults.
+- **Status:** `status.json` is written atomically every poll (mode `0600`) and
+  includes enabled, Discord connectivity, project, model, tokens, cost, busy,
+  started time, and daemon version. The GUI treats status older than 10 seconds
+  as not reporting.
+- **Disabling:** `enabled=false` clears the card once and keeps the connection
+  and daemon alive for an instant re-enable. It does not stop the watcher.
+- **GUI contract:** package `opencode-discord-status-gui`, Ipc
+  `opencode-discord-status-gui.settings`, page id `opencode-discord-status`.
+  The GUI never reads the database or Discord directly.
 - **Discord client:** keep the IPC framing and the adapted MIT notice in
   `THIRD_PARTY_NOTICES.md`.
 

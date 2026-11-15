@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-15
+
+### Added
+
+- **OpenCode Desktop settings page** for Discord Presence. Enable/disable the
+  card, choose project/model/tokens/cost/elapsed fields, turn on private mode,
+  and see a live preview. The page works while the daemon is stopped.
+- **Config and status files** under the platform config directory
+  (`opencode-discord-status/config.json` and `status.json`), written atomically
+  with mode `0600`.
+- **Daemon status** includes enabled, Discord connection, project, model,
+  tokens, cost, busy state, start time, and daemon version.
+- **Live reload**: the daemon watches the config mtime on its poll and applies
+  changes without restarting OpenCode or the watcher.
+
+### Changed
+
+- **Disabling presence clears the Discord card immediately** while keeping the
+  daemon and its Discord connection alive for an instant re-enable.
+- **Private mode hides the project** from both the Discord card and the idle
+  state line.
+- **The daemon no longer blocks on Discord at startup.** It writes status and
+  reloads config even when Discord is closed or presence is disabled.
+- `--once` uses the current settings file when present.
+
 ## [1.0.1] - 2026-11-14
 
 ### Added
@@ -76,6 +101,7 @@ First release of the Go, database-backed presence daemon.
   event-driven updates, a shared per-process Discord connection, and a hub that
   elects one card owner across open projects.
 
+[1.1.0]: https://github.com/Jerit3787/opencode-discord-status/releases/tag/v1.1.0
 [1.0.1]: https://github.com/Jerit3787/opencode-discord-status/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Jerit3787/opencode-discord-status/releases/tag/v1.0.0
 [0.1.0]: https://github.com/Jerit3787/opencode-discord-status/commits/main

@@ -96,6 +96,43 @@ To disable the presence without removing the entry, set:
 Set it back to `true` (or remove the option) to turn it on again. OpenCode
 reloads the plugin automatically.
 
+## Settings page
+
+The GUI plugin adds **Settings → Discord Presence** to OpenCode Desktop:
+
+```sh
+cd gui
+npm install
+npm run build
+```
+
+Add its absolute path to `plugins`, next to `autostart`:
+
+```jsonc
+{
+  "plugins": [
+    { "package": "/absolute/path/to/opencode-discord-status/autostart", "options": {} },
+    "/absolute/path/to/opencode-discord-status/gui"
+  ]
+}
+```
+
+The page controls enable/disable, project, model, tokens, cost, elapsed time,
+and private mode, with a live preview and config path. Changes apply on the
+daemon's next poll.
+
+Settings and status live in the platform config directory:
+
+| Platform | Directory |
+| --- | --- |
+| macOS | `~/Library/Application Support/opencode-discord-status/` |
+| Linux | `$XDG_CONFIG_HOME/opencode-discord-status/` (or `~/.config/...`) |
+| Windows | `%APPDATA%\opencode-discord-status\` |
+
+`config.json` is safe to edit by hand; the daemon reloads it when its mtime
+changes. `status.json` is written by the daemon and read by the page. Turning
+presence off clears the card without stopping the daemon.
+
 ## Flags
 
 | Flag | Default | Description |
