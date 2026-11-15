@@ -4,7 +4,8 @@ import { Ipc } from "@opencode/plugin/gui"
 export const ConfigSchema = Schema.Struct({
   version: Schema.Literal(1),
   enabled: Schema.Boolean,
-  autostart: Schema.Boolean,
+  // Optional so a window can still read a snapshot from an older main bundle.
+  autostart: Schema.optionalKey(Schema.Boolean),
   showProject: Schema.Boolean,
   showModel: Schema.Boolean,
   showTokens: Schema.Boolean,
@@ -14,6 +15,22 @@ export const ConfigSchema = Schema.Struct({
 })
 
 export type Config = typeof ConfigSchema.Type
+
+// Older window bundles predate autostart. Accept their updates and let main
+// preserve the current value instead of failing schema validation.
+export const ConfigUpdateSchema = Schema.Struct({
+  version: Schema.Literal(1),
+  enabled: Schema.Boolean,
+  autostart: Schema.optionalKey(Schema.Boolean),
+  showProject: Schema.Boolean,
+  showModel: Schema.Boolean,
+  showTokens: Schema.Boolean,
+  showCost: Schema.Boolean,
+  showElapsed: Schema.Boolean,
+  privateMode: Schema.Boolean,
+})
+
+export type ConfigUpdate = typeof ConfigUpdateSchema.Type
 
 export const StatusSchema = Schema.Struct({
   version: Schema.Literal(1),
@@ -48,6 +65,6 @@ export const SettingsIpc = Ipc.define({
   id: "opencode-discord-status-gui.settings",
   methods: {
     get: { output: SnapshotSchema },
-    update: { input: ConfigSchema, output: SnapshotSchema },
+    update: { input: ConfigUpdateSchema, output: SnapshotSchema },
   },
 })

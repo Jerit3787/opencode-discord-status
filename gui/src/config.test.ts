@@ -1,7 +1,9 @@
 import { mkdtemp, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import { ConfigUpdateSchema } from "./contract"
 import {
   configPath,
   DEFAULT_CONFIG,
@@ -56,6 +58,13 @@ it("round-trips a config atomically with owner-only permissions", async () => {
 it("returns defaults when the config is missing", async () => {
   const dir = await mkdtemp(join(tmpdir(), "ods-config-missing-"))
   expect(await readConfigFile(join(dir, "absent.json"))).toEqual({ config: DEFAULT_CONFIG })
+})
+
+it("accepts an older update without autostart", () => {
+  const { autostart: _autostart, ...older } = DEFAULT_CONFIG
+  const decoded = Schema.decodeUnknownSync(ConfigUpdateSchema)(older)
+  expect(decoded.autostart).toBeUndefined()
+  expect(decoded.enabled).toBe(true)
 })
 
 it("uses the opencode-discord-status config directory", () => {

@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin/gui"
 import { configPath, readConfigFile, readStatusFile, statusPath, writeConfigFile } from "./config"
-import { SettingsIpc, type Snapshot } from "./contract"
+import { SettingsIpc, type Config, type Snapshot } from "./contract"
 
 export const main: Plugin.MainSetup = (ctx) => {
   let lastConfigError: string | undefined
@@ -29,8 +29,14 @@ export const main: Plugin.MainSetup = (ctx) => {
 
   ctx.provide(SettingsIpc, {
     get: snapshot,
-    update: async (config) => {
+    update: async (input) => {
       try {
+        const { config: current } = await readConfigFile(configPath())
+        const config: Config = {
+          ...current,
+          ...input,
+          autostart: input.autostart ?? current.autostart ?? true,
+        }
         await writeConfigFile(configPath(), config)
       } catch (cause) {
         ctx.log.write("error", "opencode-discord-status config write failed", {

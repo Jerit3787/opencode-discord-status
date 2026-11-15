@@ -242,13 +242,13 @@ export function DiscordPresenceSettings(props: { state: SettingsState; ctx: Cont
               ui={ui}
               title="Start with OpenCode"
               description="Launch the daemon automatically. Turning this off stops the supervised daemon."
-              checked={config().autostart}
+              checked={config().autostart !== false}
               disabled={controlsDisabled()}
               onChange={(checked) => set({ autostart: checked })}
             />
           </div>
 
-          <Show when={!config().autostart}>
+          <Show when={config().autostart === false}>
             <div class="ods-notice">
               <span>
                 Autostart is off. The daemon will not start with OpenCode; turn this on here to
