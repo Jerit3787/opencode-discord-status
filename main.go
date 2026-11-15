@@ -27,13 +27,28 @@ const (
 
 var clientIDPattern = regexp.MustCompile(`^\d{17,20}$`)
 
+type presenceClient interface {
+	Connect() error
+	Reconnect() error
+	SetActivity(discord.Activity) error
+	ClearActivity() error
+	Connected() bool
+	Close() error
+}
+
 var (
-	discordClient  *discord.Client
-	lastPresence   string
-	lastDetails    string
-	lastSent       time.Time
-	lastReconnect  time.Time
-	currentSession string
+	discordClient      presenceClient
+	settings           = defaultSettings()
+	settingsFilePath   string
+	statusFilePath     string
+	settingsModTime    time.Time
+	lastConnectAttempt time.Time
+	presenceCleared    bool
+	lastPresence       string
+	lastDetails        string
+	lastSent           time.Time
+	lastReconnect      time.Time
+	currentSession     string
 )
 
 func main() {
@@ -64,7 +79,13 @@ func main() {
 		log.Fatal("could not resolve the database path")
 	}
 
+	settingsFilePath = filepath.Join(configDir(), "config.json")
+	statusFilePath = filepath.Join(configDir(), "status.json")
+
 	if *once {
+		if loaded, err := loadSettings(settingsFilePath); err == nil {
+			settings = loaded
+		}
 		printOnce(*dbPath, *idleAfter)
 		return
 	}
@@ -75,6 +96,18 @@ func main() {
 
 	if *exitWhenClosed && !openCodeRunning() {
 		return
+	}
+
+	if err := ensureSettingsFile(settingsFilePath); err != nil {
+		log.Printf("Could not create settings file: %v", err)
+	}
+	loaded, err := loadSettings(settingsFilePath)
+	if err != nil {
+		log.Printf("Settings: %v", err)
+	}
+	settings = loaded
+	if info, err := os.Stat(settingsFilePath); err == nil {
+		settingsModTime = info.ModTime()
 	}
 
 	discordClient = discord.NewClient(*clientID)
@@ -88,9 +121,8 @@ func main() {
 		os.Exit(0)
 	}()
 
-	connectDiscord(*exitWhenClosed)
-
 	if *doctor {
+		connectDiscord(*exitWhenClosed)
 		runDoctor()
 		return
 	}
@@ -104,12 +136,15 @@ func main() {
 			os.Exit(0)
 		}
 
+		reloadSettingsIfChanged()
+
 		rows, err := readSessions(*dbPath)
 		if err != nil {
 			if err.Error() != lastReadError {
 				lastReadError = err.Error()
 				log.Printf("Could not read %s: %v", *dbPath, err)
 			}
+			writePresenceStatus(nil)
 			return
 		}
 		lastReadError = ""
@@ -118,7 +153,7 @@ func main() {
 		if snapshot != nil {
 			currentSession = snapshot.SessionID
 		}
-		updatePresence(snapshot, *debug)
+		syncPresence(snapshot, time.Now(), *debug)
 	}
 
 	tick()
@@ -134,6 +169,8 @@ func connectDiscord(exitWhenClosed bool) {
 		err := discordClient.Connect()
 		if err == nil {
 			log.Print("Connected to Discord")
+			lastPresence = ""
+			lastSent = time.Time{}
 			return
 		}
 		if attempt == 1 {
@@ -144,6 +181,94 @@ func connectDiscord(exitWhenClosed bool) {
 		}
 		time.Sleep(reconnectInterval)
 	}
+}
+
+// ensureDiscordConnected connects lazily so a missing Discord or disabled
+// presence never blocks status writes and config reloads.
+func ensureDiscordConnected(now time.Time) bool {
+	if !settings.Enabled {
+		return false
+	}
+	if discordClient.Connected() {
+		return true
+	}
+
+	firstAttempt := lastConnectAttempt.IsZero()
+	if !firstAttempt && now.Sub(lastConnectAttempt) < reconnectInterval {
+		return false
+	}
+	lastConnectAttempt = now
+
+	if err := discordClient.Connect(); err != nil {
+		if firstAttempt {
+			log.Printf("Discord not reachable (%v); retrying every %s", err, reconnectInterval)
+		}
+		return false
+	}
+	log.Print("Connected to Discord")
+	lastPresence = ""
+	lastSent = time.Time{}
+	return true
+}
+
+func writePresenceStatus(snapshot *Snapshot) {
+	if err := writeStatus(statusFilePath, statusFromSnapshot(snapshot, discordClient != nil && discordClient.Connected(), settings)); err != nil {
+		log.Printf("Could not write status: %v", err)
+	}
+}
+
+// syncPresence is the single place that applies settings, updates Discord, and
+// writes status. It keeps working while Discord is closed or presence is off.
+func syncPresence(snapshot *Snapshot, now time.Time, debug bool) {
+	connected := discordClient.Connected()
+
+	if !settings.Enabled {
+		if connected && !presenceCleared {
+			if err := discordClient.ClearActivity(); err != nil {
+				log.Printf("Could not clear presence: %v", err)
+			} else {
+				presenceCleared = true
+			}
+		}
+		lastPresence = ""
+		writePresenceStatus(snapshot)
+		return
+	}
+
+	presenceCleared = false
+	if !ensureDiscordConnected(now) {
+		writePresenceStatus(snapshot)
+		return
+	}
+
+	updatePresence(snapshot, debug)
+	writePresenceStatus(snapshot)
+}
+
+// reloadSettingsIfChanged applies a config edit without restarting the daemon.
+// Valid fields still apply when another field is malformed.
+func reloadSettingsIfChanged() bool {
+	info, err := os.Stat(settingsFilePath)
+	if err != nil {
+		return false
+	}
+	if !info.ModTime().After(settingsModTime) {
+		return false
+	}
+	settingsModTime = info.ModTime()
+
+	next, err := loadSettings(settingsFilePath)
+	if err != nil {
+		log.Printf("Settings: %v", err)
+	}
+	if next == settings {
+		return false
+	}
+
+	settings = next
+	lastPresence = ""
+	presenceCleared = false
+	return true
 }
 
 func updatePresence(snapshot *Snapshot, debug bool) {
@@ -161,12 +286,12 @@ func updatePresence(snapshot *Snapshot, debug bool) {
 	}
 
 	details, state := presenceText(snapshot)
+	startTime := presenceStartTime(snapshot, settings)
 
-	startKey := ""
-	if snapshot != nil && snapshot.Busy && !snapshot.StartedAt.IsZero() {
-		startKey = snapshot.StartedAt.String()
+	key := details + "\n" + state
+	if startTime != nil {
+		key += "\n" + startTime.String()
 	}
-	key := details + "\n" + state + "\n" + startKey
 	if key == lastPresence {
 		return
 	}
@@ -188,10 +313,7 @@ func updatePresence(snapshot *Snapshot, debug bool) {
 		State:     state,
 		LargeText: largeText,
 	}
-	if startKey != "" {
-		start := snapshot.StartedAt
-		activity.StartTime = &start
-	}
+	activity.StartTime = startTime
 
 	if err := discordClient.SetActivity(activity); err != nil {
 		log.Printf("Presence update failed: %v", err)
@@ -212,12 +334,16 @@ func clearPresence() {
 	}
 }
 
-func presenceText(snapshot *Snapshot) (string, string) {
+func presenceTextWithSettings(snapshot *Snapshot, cfg Settings) (string, string) {
 	details := "Idle"
 	if snapshot != nil && snapshot.Busy {
-		details = "Working on OpenCode"
-		if snapshot.Project != "" {
+		switch {
+		case !cfg.ShowProject || cfg.PrivateMode:
+			details = "Working on: a session"
+		case snapshot.Project != "":
 			details = "Working on: " + snapshot.Project
+		default:
+			details = "Working on: OpenCode"
 		}
 	}
 
@@ -225,32 +351,44 @@ func presenceText(snapshot *Snapshot) (string, string) {
 		return truncate(details, maxFieldLength), "OpenCode"
 	}
 
-	state := ""
+	parts := make([]string, 0, 3)
 	if snapshot.Busy {
-		model := snapshot.Model
-		if model == "" {
-			model = "OpenCode"
+		if cfg.ShowModel {
+			model := snapshot.Model
+			if model == "" {
+				model = "OpenCode"
+			}
+			parts = append(parts, model)
 		}
-		state = fmt.Sprintf(
-			"%s | %s tokens | %s",
-			model,
-			formatTokens(snapshot.Tokens),
-			formatCost(snapshot.Cost),
-		)
-	} else {
-		project := snapshot.Project
-		if project == "" {
-			project = "OpenCode"
-		}
-		state = fmt.Sprintf(
-			"%s | %s tokens | %s",
-			project,
-			formatTokens(snapshot.Tokens),
-			formatCost(snapshot.Cost),
-		)
+	} else if cfg.ShowProject && !cfg.PrivateMode && snapshot.Project != "" {
+		parts = append(parts, snapshot.Project)
+	}
+	if cfg.ShowTokens {
+		parts = append(parts, fmt.Sprintf("%s tokens", formatTokens(snapshot.Tokens)))
+	}
+	if cfg.ShowCost {
+		parts = append(parts, formatCost(snapshot.Cost))
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "OpenCode")
 	}
 
-	return truncate(details, maxFieldLength), truncate(state, maxFieldLength)
+	return truncate(details, maxFieldLength), truncate(strings.Join(parts, " | "), maxFieldLength)
+}
+
+// presenceText uses the current settings.
+func presenceText(snapshot *Snapshot) (string, string) {
+	return presenceTextWithSettings(snapshot, settings)
+}
+
+// presenceStartTime returns the elapsed-timer start only for a busy session
+// with the elapsed field enabled.
+func presenceStartTime(snapshot *Snapshot, cfg Settings) *time.Time {
+	if snapshot == nil || !snapshot.Busy || !cfg.ShowElapsed || snapshot.StartedAt.IsZero() {
+		return nil
+	}
+	start := snapshot.StartedAt
+	return &start
 }
 
 func truncate(value string, max int) string {
