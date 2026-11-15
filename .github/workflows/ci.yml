@@ -27,3 +27,27 @@ jobs:
 
       - if: runner.os == 'Linux'
         run: go test -race ./...
+
+  gui:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+
+      - run: npm ci
+        working-directory: gui
+
+      - run: npm test
+        working-directory: gui
+
+      - run: npm run typecheck
+        working-directory: gui
+
+      - run: npm run build
+        working-directory: gui
