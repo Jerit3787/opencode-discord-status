@@ -72,14 +72,18 @@ export function DiscordPresenceSettings(props: { state: SettingsState; ctx: Cont
   }
 
   const headline = () => {
-    if (!running()) return "Daemon not running"
+    if (!running()) return status() ? "Daemon not reporting" : "Daemon not running"
     if (!config().enabled) return "Presence disabled"
     if (!status()?.discordConnected) return "Discord unavailable"
     return "Discord connected"
   }
 
   const statusDetail = () => {
-    if (!running()) return "Settings stay editable; changes apply when the daemon starts."
+    if (!running()) {
+      return status()
+        ? "The status file is stale. Settings stay editable."
+        : "Settings stay editable; changes apply when the daemon starts."
+    }
     if (!config().enabled) return "The daemon is running and Discord activity has been cleared."
     if (!status()?.discordConnected) return "The daemon is retrying the Discord connection."
     return status()?.busy ? "Showing the busy session." : "Showing the idle card."
