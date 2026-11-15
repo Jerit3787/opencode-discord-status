@@ -40,6 +40,9 @@ settings** from the command palette.
 
 - **Enable Discord presence** — off clears the card immediately without stopping
   the daemon; on restores it without restarting OpenCode.
+- **Start with OpenCode** — launch the daemon automatically. Turning it off
+  stops the supervised daemon; turning it on starts it immediately. This choice
+  persists across restarts.
 - **Project name / Model / Token count / Estimated cost / Elapsed time** — pick
   the parts shown on the card.
 - **Private mode** — replaces the project with `a session` and hides it from the

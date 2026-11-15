@@ -117,9 +117,10 @@ Add its absolute path to `plugins`, next to `autostart`:
 }
 ```
 
-The page controls enable/disable, project, model, tokens, cost, elapsed time,
-and private mode, with a live preview and config path. Changes apply on the
-daemon's next poll.
+The page controls enable/disable, **Start with OpenCode**, project, model,
+tokens, cost, elapsed time, and private mode, with a live preview and config
+path. Changes apply on the daemon's next poll; turning autostart off stops the
+supervised daemon and turning it on starts it immediately.
 
 Settings and status live in the platform config directory:
 

@@ -103,7 +103,8 @@ Add the absolute `gui` directory to `plugins`, next to `autostart`:
 ```
 
 OpenCode reloads the plugin after the config change. The page includes status,
-master switch, field switches, private mode, a live preview, and the config path.
+master switch, **Start with OpenCode**, field switches, private mode, a live
+preview, and the config path.
 
 Settings live in the platform config directory:
 
@@ -123,6 +124,11 @@ The choice persists across restarts. If presence was off when OpenCode closed,
 the autostart plugin starts the daemon disabled and it does not connect to
 Discord; if presence was on, the daemon connects and publishes as soon as it
 starts.
+
+**Start with OpenCode** is a separate, persisted setting. Turning it off stops
+the supervised daemon; turning it on starts it immediately. If it is off when
+OpenCode launches, no daemon starts until you turn it back on or run the binary
+manually.
 
 See [gui/README.md](gui/README.md) for development and the full field list.
 

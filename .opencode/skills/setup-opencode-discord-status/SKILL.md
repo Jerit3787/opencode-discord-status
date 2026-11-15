@@ -82,10 +82,11 @@ Add the absolute `gui` directory to `plugins`, next to `autostart`:
 }
 ```
 
-It controls enable/disable, project, model, tokens, cost, elapsed time, and
-private mode. Settings and status live under the platform config directory
-(`opencode-discord-status/config.json` and `status.json`); changes apply on the
-daemon's next poll.
+It controls enable/disable, start-with-OpenCode, project, model, tokens, cost,
+elapsed time, and private mode. Settings and status live under the platform
+config directory (`opencode-discord-status/config.json` and `status.json`);
+changes apply on the daemon's next poll. Turning autostart off stops the
+supervised daemon; turning it on starts it immediately.
 
 ## What it reads
 

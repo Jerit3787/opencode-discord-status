@@ -67,6 +67,10 @@ Go 1.26+ is required. The GUI plugin needs Node and the dependencies in
   as not reporting.
 - **Disabling:** `enabled=false` clears the card once and keeps the connection
   and daemon alive for an instant re-enable. It does not stop the watcher.
+- **Autostart:** `autostart` is persisted in the same config. The `autostart`
+  plugin polls it every two seconds: false stops the supervised child, true
+  starts it when OpenCode is running. Plugin reloads re-arm the supervisor
+  without duplicating the child.
 - **GUI contract:** package `opencode-discord-status-gui`, Ipc
   `opencode-discord-status-gui.settings`, page id `opencode-discord-status`.
   The GUI never reads the database or Discord directly.

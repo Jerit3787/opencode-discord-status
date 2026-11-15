@@ -18,6 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tokens, cost, busy state, start time, and daemon version.
 - **Live reload**: the daemon watches the config mtime on its poll and applies
   changes without restarting OpenCode or the watcher.
+- **Start with OpenCode** switch. Turning autostart off stops the supervised
+  daemon; turning it on starts it immediately. The choice persists and the
+  autostart plugin re-arms on plugin reload without duplicating the daemon.
 
 ### Changed
 
