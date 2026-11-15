@@ -46,7 +46,10 @@ settings** from the command palette.
   idle state line.
 
 The daemon reloads the config on its next poll. The page polls status every 3
-seconds and treats status older than 10 seconds as not reporting.
+seconds and treats status older than 10 seconds as not reporting. The master
+switch persists: if presence was off at shutdown, the next OpenCode launch
+starts the daemon disabled and it does not connect to Discord; if it was on, the
+daemon connects and publishes immediately.
 
 ## Files
 

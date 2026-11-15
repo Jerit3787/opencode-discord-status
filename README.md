@@ -119,6 +119,11 @@ without restarting OpenCode or the watcher. Turning presence off clears the
 Discord card immediately but leaves the daemon running so turning it back on
 needs no restart. Private mode hides the project from the card and the preview.
 
+The choice persists across restarts. If presence was off when OpenCode closed,
+the autostart plugin starts the daemon disabled and it does not connect to
+Discord; if presence was on, the daemon connects and publishes as soon as it
+starts.
+
 See [gui/README.md](gui/README.md) for development and the full field list.
 
 See [SETUP.md](SETUP.md) for the LaunchAgent.
