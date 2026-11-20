@@ -54,6 +54,9 @@ Go 1.26+ is required. The GUI plugin needs Node and the dependencies in
   replies must surface. Do not turn it back into fire-and-forget.
 - **Discord rate limits.** Token/cost churn is throttled to one update per four
   seconds; busy/idle and project changes bypass the throttle.
+- **Cost:** prefer OpenCode's session cost. When it is zero, estimate it from the
+  OpenCode Console's per-model average cost (cache included) and mark the card
+  value with `~`. Do not present the estimate as a charge.
 - **Privacy:** only the project folder name, model, tokens, and cost leave the
   machine. Never prompts, messages, or code. Private mode hides the project from
   both Discord and the settings preview.

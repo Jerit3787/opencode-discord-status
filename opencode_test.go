@@ -11,16 +11,18 @@ var testNow = time.UnixMilli(1_700_000_000_000)
 
 func testRow(overrides func(*SessionRow)) SessionRow {
 	row := SessionRow{
-		SessionID:    "ses_1",
-		Directory:    "/work/my-app",
-		Model:        `{"id":"deepseek-v4.1-flash","providerID":"opencode-go"}`,
-		Agent:        "build",
-		Cost:         0.0421,
-		TokensInput:  11_800,
-		TokensOutput: 460,
-		TimeUpdated:  testNow.UnixMilli() - 1_000,
-		Message:      `{"time":{"created":1699999995000,"streamed":1699999999000},"agent":"build","model":{"id":"deepseek-v4.1-flash"}}`,
-		TurnStarted:  1_699_999_990_000,
+		SessionID:        "ses_1",
+		Directory:        "/work/my-app",
+		Model:            `{"id":"deepseek-v4.1-flash","providerID":"opencode-go"}`,
+		Agent:            "build",
+		Cost:             0.0421,
+		TokensInput:      11_800,
+		TokensOutput:     460,
+		TokensCacheRead:  2_000,
+		TokensCacheWrite: 100,
+		TimeUpdated:      testNow.UnixMilli() - 1_000,
+		Message:          `{"time":{"created":1699999995000,"streamed":1699999999000},"agent":"build","model":{"id":"deepseek-v4.1-flash"}}`,
+		TurnStarted:      1_699_999_990_000,
 	}
 	if overrides != nil {
 		overrides(&row)
@@ -85,6 +87,9 @@ func TestAnalyzeStreamingIsBusy(t *testing.T) {
 	}
 	if snapshot.Tokens != 12_260 {
 		t.Errorf("tokens = %d", snapshot.Tokens)
+	}
+	if snapshot.AllTokens != 14_360 {
+		t.Errorf("allTokens = %d", snapshot.AllTokens)
 	}
 	if snapshot.StartedAt.UnixMilli() != 1_699_999_990_000 {
 		t.Errorf("startedAt = %v", snapshot.StartedAt)
@@ -195,6 +200,8 @@ func TestReadSessions(t *testing.T) {
 			cost real,
 			tokens_input integer,
 			tokens_output integer,
+			tokens_cache_read integer,
+			tokens_cache_write integer,
 			time_updated integer,
 			time_archived integer
 		);
@@ -213,9 +220,10 @@ func TestReadSessions(t *testing.T) {
 
 	row := testRow(nil)
 	_, err = database.Exec(
-		"insert into session_v2 values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"insert into session_v2 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		row.SessionID, row.Directory, row.Model, row.Agent, row.Cost,
-		row.TokensInput, row.TokensOutput, row.TimeUpdated, nil,
+		row.TokensInput, row.TokensOutput, row.TokensCacheRead, row.TokensCacheWrite,
+		row.TimeUpdated, nil,
 	)
 	if err != nil {
 		t.Fatal(err)

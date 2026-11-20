@@ -8,8 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Omit the cost segment when OpenCode reports zero, so flat-rate and
-  subscription providers do not show a misleading `$0.00`.
+- Estimate the session cost from the signed-in OpenCode Console when OpenCode
+  reports zero (flat-rate and subscription plans). The Console's average cost
+  per token for the model, including cache reads, is applied to the session and
+  shown as `~$2.47`.
 
 ## [1.1.0] - 2026-11-15
 

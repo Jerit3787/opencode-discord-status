@@ -57,6 +57,24 @@ func TestPresenceTextHidesZeroCost(t *testing.T) {
 	}
 }
 
+func TestPresenceTextEstimatedCost(t *testing.T) {
+	details, state := presenceText(&Snapshot{
+		Busy:          true,
+		Project:       "my-app",
+		Model:         "DeepSeek V4.1 Flash",
+		Tokens:        12_300,
+		Cost:          0.03,
+		CostEstimated: true,
+	})
+
+	if details != "Working on: my-app" {
+		t.Errorf("details = %q", details)
+	}
+	if state != "DeepSeek V4.1 Flash | 12.3K tokens | ~$0.03" {
+		t.Errorf("state = %q", state)
+	}
+}
+
 func TestPresenceTextSettingsMatrix(t *testing.T) {
 	busy := &Snapshot{
 		Busy:    true,

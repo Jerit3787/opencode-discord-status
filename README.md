@@ -14,8 +14,11 @@ Working on: opencode-discord-status
 DeepSeek V4.1 Flash | 12.3K tokens | $0.0421
 ```
 
-Cost is omitted when OpenCode reports zero, as flat-rate and subscription
-providers often do.
+Cost comes from OpenCode's session accounting. When OpenCode reports zero
+(flat-rate and subscription plans), the daemon estimates it from the signed-in
+OpenCode Console's average cost per token for that model, including cache reads.
+The estimate is prefixed with `~`, for example `~$2.47`; it is a list-cost
+estimate, not an amount charged.
 
 It reads OpenCode's local SQLite database and talks to the Discord desktop app
 over its local IPC socket. No plugin, no server connection, no bot token, and no

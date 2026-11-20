@@ -24,6 +24,8 @@ const sessionQuery = `select
   coalesce(s.cost, 0),
   coalesce(s.tokens_input, 0),
   coalesce(s.tokens_output, 0),
+  coalesce(s.tokens_cache_read, 0),
+  coalesce(s.tokens_cache_write, 0),
   coalesce(s.time_updated, 0),
   coalesce(m.data, ''),
   coalesce((
@@ -43,15 +45,17 @@ limit 20`
 
 // SessionRow is one row of sessionQuery.
 type SessionRow struct {
-	SessionID    string
-	Directory    string
-	Model        string
-	Agent        string
-	Cost         float64
-	TokensInput  int64
-	TokensOutput int64
-	TimeUpdated  int64
-	Message      string
+	SessionID        string
+	Directory        string
+	Model            string
+	Agent            string
+	Cost             float64
+	TokensInput      int64
+	TokensOutput     int64
+	TokensCacheRead  int64
+	TokensCacheWrite int64
+	TimeUpdated      int64
+	Message          string
 	// TurnStarted is the latest user message time for this session, which
 	// stays fixed while the assistant works through steps.
 	TurnStarted int64
@@ -66,21 +70,26 @@ type messageData struct {
 	Finish string `json:"finish"`
 	Agent  string `json:"agent"`
 	Model  struct {
-		ID string `json:"id"`
+		ID         string `json:"id"`
+		ProviderID string `json:"providerID"`
 	} `json:"model"`
 }
 
 // Snapshot is what the card should show.
 type Snapshot struct {
-	SessionID string
-	Busy      bool
-	Project   string
-	Model     string
-	Agent     string
-	Cost      float64
-	Tokens    int64
-	StartedAt time.Time
-	Updated   int64
+	SessionID     string
+	Busy          bool
+	Project       string
+	Model         string
+	ModelID       string
+	ProviderID    string
+	Agent         string
+	Cost          float64
+	CostEstimated bool
+	Tokens        int64
+	AllTokens     int64
+	StartedAt     time.Time
+	Updated       int64
 }
 
 func readSessions(dbPath string) ([]SessionRow, error) {
@@ -107,6 +116,8 @@ func readSessions(dbPath string) ([]SessionRow, error) {
 			&row.Cost,
 			&row.TokensInput,
 			&row.TokensOutput,
+			&row.TokensCacheRead,
+			&row.TokensCacheWrite,
 			&row.TimeUpdated,
 			&row.Message,
 			&row.TurnStarted,
@@ -132,9 +143,10 @@ func analyze(row SessionRow, now time.Time, idleAfter time.Duration) Snapshot {
 		project = filepath.Base(row.Directory)
 	}
 
-	modelID := modelIDFromJSON(row.Model)
-	if modelID == "" && message != nil {
-		modelID = message.Model.ID
+	info := modelInfoFromJSON(row.Model)
+	if info.ID == "" && message != nil {
+		info.ID = message.Model.ID
+		info.ProviderID = message.Model.ProviderID
 	}
 
 	agent := row.Agent
@@ -143,14 +155,17 @@ func analyze(row SessionRow, now time.Time, idleAfter time.Duration) Snapshot {
 	}
 
 	snapshot := Snapshot{
-		SessionID: row.SessionID,
-		Busy:      busy,
-		Project:   project,
-		Model:     formatModelName(modelID),
-		Agent:     agent,
-		Cost:      row.Cost,
-		Tokens:    row.TokensInput + row.TokensOutput,
-		Updated:   row.TimeUpdated,
+		SessionID:  row.SessionID,
+		Busy:       busy,
+		Project:    project,
+		Model:      formatModelName(info.ID),
+		ModelID:    info.ID,
+		ProviderID: info.ProviderID,
+		Agent:      agent,
+		Cost:       row.Cost,
+		Tokens:     row.TokensInput + row.TokensOutput,
+		AllTokens:  row.TokensInput + row.TokensOutput + row.TokensCacheRead + row.TokensCacheWrite,
+		Updated:    row.TimeUpdated,
 	}
 	if busy {
 		started := row.TurnStarted
@@ -324,15 +339,21 @@ func parseMessage(value string) *messageData {
 	return &message
 }
 
-func modelIDFromJSON(value string) string {
+type modelInfo struct {
+	ID         string
+	ProviderID string
+}
+
+func modelInfoFromJSON(value string) modelInfo {
 	if value == "" {
-		return ""
+		return modelInfo{}
 	}
 	var model struct {
-		ID string `json:"id"`
+		ID         string `json:"id"`
+		ProviderID string `json:"providerID"`
 	}
 	if err := json.Unmarshal([]byte(value), &model); err != nil {
-		return ""
+		return modelInfo{}
 	}
-	return model.ID
+	return modelInfo{ID: model.ID, ProviderID: model.ProviderID}
 }

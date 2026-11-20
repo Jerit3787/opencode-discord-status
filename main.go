@@ -153,6 +153,8 @@ func main() {
 		if snapshot != nil {
 			currentSession = snapshot.SessionID
 		}
+		estimator.RefreshIfStale(*dbPath)
+		estimator.Apply(snapshot)
 		syncPresence(snapshot, time.Now(), *debug)
 	}
 
@@ -367,7 +369,11 @@ func presenceTextWithSettings(snapshot *Snapshot, cfg Settings) (string, string)
 		parts = append(parts, fmt.Sprintf("%s tokens", formatTokens(snapshot.Tokens)))
 	}
 	if cfg.ShowCost && snapshot.Cost > 0 {
-		parts = append(parts, formatCost(snapshot.Cost))
+		cost := formatCost(snapshot.Cost)
+		if snapshot.CostEstimated {
+			cost = "~" + cost
+		}
+		parts = append(parts, cost)
 	}
 	if len(parts) == 0 {
 		parts = append(parts, "OpenCode")
@@ -400,12 +406,16 @@ func truncate(value string, max int) string {
 }
 
 func printOnce(dbPath string, idleAfter time.Duration) {
+	estimator.RefreshNow(dbPath)
+
 	rows, err := readSessions(dbPath)
 	if err != nil {
 		log.Fatalf("Could not read %s: %v", dbPath, err)
 	}
 
-	details, state := presenceText(pickSession(rows, time.Now(), idleAfter, "", switchMargin))
+	snapshot := pickSession(rows, time.Now(), idleAfter, "", switchMargin)
+	estimator.Apply(snapshot)
+	details, state := presenceText(snapshot)
 	fmt.Println(details)
 	fmt.Println(state)
 }
