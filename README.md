@@ -14,6 +14,9 @@ Working on: opencode-discord-status
 DeepSeek V4.1 Flash | 12.3K tokens | $0.0421
 ```
 
+Cost is omitted when OpenCode reports zero, as flat-rate and subscription
+providers often do.
+
 It reads OpenCode's local SQLite database and talks to the Discord desktop app
 over its local IPC socket. No plugin, no server connection, no bot token, and no
 network traffic.

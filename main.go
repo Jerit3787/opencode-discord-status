@@ -366,7 +366,7 @@ func presenceTextWithSettings(snapshot *Snapshot, cfg Settings) (string, string)
 	if cfg.ShowTokens {
 		parts = append(parts, fmt.Sprintf("%s tokens", formatTokens(snapshot.Tokens)))
 	}
-	if cfg.ShowCost {
+	if cfg.ShowCost && snapshot.Cost > 0 {
 		parts = append(parts, formatCost(snapshot.Cost))
 	}
 	if len(parts) == 0 {
